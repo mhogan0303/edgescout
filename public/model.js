@@ -1,3 +1,4 @@
+ /**
  * EdgeScout — Edge Detection Model
  * Loaded by the frontend dashboard. All logic runs client-side.
  * Exposed on the global `EdgeModel` object.
