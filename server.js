@@ -15,21 +15,14 @@ const PORT = process.env.PORT || 3000;
 const BASE_URL = 'https://api.elections.kalshi.com';
 
 // ─── Sports filtering ─────────────────────────────────────────────────
-// Broad list — catches Kalshi's internal naming conventions
 const SPORTS_KEYWORDS = [
-  // Standard sport abbreviations
   'NBA', 'NFL', 'MLB', 'NHL', 'NCAAB', 'NCAAF', 'WNBA',
-  'PGA', 'UFC', 'MMA', 'EPL', 'FIFA', 'NCAA',
-  // Kalshi-specific ticker patterns
-  'SPORT', 'MULTI', 'GAME', 'MATCH', 'PLAYER',
-  // Sport names written out
+  'PGA', 'UFC', 'MMA', 'EPL', 'FIFA', 'NCAA', 'GOLF', 'BOXING',
+  'SPORT', 'GAME', 'MATCH', 'PLAYER',
   'BASKETBALL', 'FOOTBALL', 'BASEBALL', 'HOCKEY', 'TENNIS',
-  'SOCCER', 'GOLF', 'BOXING', 'WRESTLING',
-  // Common in Kalshi sports titles
+  'SOCCER', 'WRESTLING',
   'SERIES', 'PLAYOFF', 'CHAMPION', 'FINALS', 'TOURNAMENT',
   'SCORE', 'WINS', 'BEATS', 'POINTS', 'GOALS', 'RUNS',
-  // Player/team context words common in sports props
-  'QUARTERBACK', 'PITCHER', 'TOUCHDOWN',
 ];
 
 function isSportsMarket(market) {
@@ -42,6 +35,24 @@ function isSportsMarket(market) {
     market.event_ticker  ?? '',
   ].join(' ').toUpperCase();
   return SPORTS_KEYWORDS.some(kw => haystack.includes(kw));
+}
+
+// ─── Price extraction ─────────────────────────────────────────────────
+// Kalshi returns prices as dollar strings e.g. "0.4440"
+// We convert to cents (integer 1-99) for the edge model
+function dollarsToCents(val) {
+  if (!val) return null;
+  const n = Math.round(parseFloat(val) * 100);
+  return (n > 0 && n < 100) ? n : null;
+}
+
+function extractPrices(market) {
+  // Prefer bid prices; fall back to ask prices as proxy
+  const yesBid = dollarsToCents(market.yes_bid_dollars)
+              ?? dollarsToCents(market.yes_ask_dollars);
+  const noBid  = dollarsToCents(market.no_bid_dollars)
+              ?? dollarsToCents(market.no_ask_dollars);
+  return { yes_bid: yesBid, no_bid: noBid };
 }
 
 // ─── RSA-PSS Signing ──────────────────────────────────────────────────
@@ -83,7 +94,6 @@ async function kalshiGet(path, keyId, pem) {
   return res.json();
 }
 
-// Fetch all open markets (paginated)
 async function fetchAllMarkets(keyId, pem) {
   let markets = [];
   let cursor  = null;
@@ -102,38 +112,6 @@ async function fetchAllMarkets(keyId, pem) {
   } while (cursor && pages < 20);
 
   return markets;
-}
-
-// Fetch orderbook for one ticker
-// Returns best yes bid and best no bid (in cents, 1-99)
-async function fetchOrderbook(ticker, keyId, pem) {
-  try {
-    const path = `/trade-api/v2/markets/${ticker}/orderbook`;
-    const data = await kalshiGet(path, keyId, pem);
-
-    // Kalshi orderbook response shape:
-    // { orderbook: { yes: [{price, quantity}], no: [{price, quantity}] } }
-    // OR sometimes the levels are under yes_levels / no_levels
-    const ob = data.orderbook ?? data;
-
-    const yesLevels = ob.yes ?? ob.yes_levels ?? [];
-    const noLevels  = ob.no  ?? ob.no_levels  ?? [];
-
-    const yesBids = yesLevels
-      .filter(l => (l.quantity ?? l.delta ?? 0) > 0)
-      .sort((a, b) => b.price - a.price);
-
-    const noBids = noLevels
-      .filter(l => (l.quantity ?? l.delta ?? 0) > 0)
-      .sort((a, b) => b.price - a.price);
-
-    return {
-      yes_bid: yesBids.length ? yesBids[0].price : null,
-      no_bid:  noBids.length  ? noBids[0].price  : null,
-    };
-  } catch {
-    return { yes_bid: null, no_bid: null };
-  }
 }
 
 // ─── Middleware ───────────────────────────────────────────────────────
@@ -158,93 +136,39 @@ app.get('/api/markets', async (req, res) => {
     // 1. Fetch all open markets
     const allMarkets = await fetchAllMarkets(keyId, pem);
 
-    // 2. Filter to sports using broad keyword list
+    // 2. Filter to sports
     const sports = allMarkets.filter(isSportsMarket);
 
-    // 3. Take up to 80 markets — spread across the list
-    //    Don't sort by volume since Kalshi often returns 0 for these fields.
-    //    Instead interleave from front/middle/back to get variety.
-    const MAX = 80;
-    let candidates = sports;
-    if (candidates.length > MAX) {
-      const step = Math.floor(candidates.length / MAX);
-      candidates = candidates.filter((_, i) => i % step === 0).slice(0, MAX);
-    }
-
-    // 4. Fetch orderbooks in parallel batches of 10
-    const enriched = [];
-    const BATCH = 10;
-
-    for (let i = 0; i < candidates.length; i += BATCH) {
-      const batch  = candidates.slice(i, i + BATCH);
-      const prices = await Promise.all(
-        batch.map(m => fetchOrderbook(m.ticker, keyId, pem))
-      );
-      batch.forEach((m, idx) => {
-        enriched.push({
+    // 3. Extract prices directly from market data (no extra API calls needed)
+    const withPrices = sports
+      .map(m => {
+        const { yes_bid, no_bid } = extractPrices(m);
+        return {
           ticker:        m.ticker        ?? null,
           title:         m.title         ?? null,
-          yes_bid:       prices[idx].yes_bid,
-          yes_ask:       null,
-          no_bid:        prices[idx].no_bid,
-          no_ask:        null,
-          volume:        m.volume        ?? 0,
-          open_interest: m.open_interest ?? 0,
+          yes_bid,
+          no_bid,
+          volume:        Math.round(parseFloat(m.volume_fp        ?? m.volume        ?? 0)),
+          open_interest: Math.round(parseFloat(m.open_interest_fp ?? m.open_interest ?? 0)),
           close_time:    m.close_time    ?? null,
           status:        m.status        ?? null,
           series_ticker: m.series_ticker ?? null,
           event_ticker:  m.event_ticker  ?? null,
           category:      m.category      ?? null,
-        });
-      });
-    }
-
-    // 5. Only return markets where we got real prices on both sides
-    const withPrices = enriched.filter(
-      m => m.yes_bid !== null && m.no_bid !== null
-    );
+        };
+      })
+      // Only keep markets where we have both sides priced
+      .filter(m => m.yes_bid !== null && m.no_bid !== null);
 
     res.json({
       count:         withPrices.length,
       total_fetched: allMarkets.length,
       sports_found:  sports.length,
-      sampled:       candidates.length,
       markets:       withPrices,
     });
 
   } catch (err) {
     console.error('[/api/markets]', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Debug route — shows raw sample of sports markets WITHOUT orderbook fetch
-// Helps diagnose what data Kalshi is actually returning
-app.get('/api/debug', async (req, res) => {
-  const rawKey = process.env.KALSHI_API_KEY;
-  const keyId  = process.env.KALSHI_KEY_ID;
-  if (!rawKey || !keyId) return res.status(500).json({ error: 'Keys not configured.' });
-
-  const pem = normalisePem(rawKey);
-  try {
-    const allMarkets = await fetchAllMarkets(keyId, pem);
-    const sports     = allMarkets.filter(isSportsMarket);
-
-    // Return first 5 sports markets raw + first orderbook raw
-    const sample    = sports.slice(0, 5);
-    let obSample = null;
-    if (sample.length) {
-      const path = `/trade-api/v2/markets/${sample[0].ticker}/orderbook`;
-      try { obSample = await kalshiGet(path, keyId, pem); } catch (e) { obSample = { error: e.message }; }
-    }
-
-    res.json({
-      total_fetched: allMarkets.length,
-      sports_found:  sports.length,
-      sample_markets: sample,
-      sample_orderbook: obSample,
-    });
-  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
