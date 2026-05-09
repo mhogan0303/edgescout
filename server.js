@@ -14,15 +14,33 @@ const PORT = process.env.PORT || 3000;
 
 const BASE_URL = 'https://api.elections.kalshi.com';
 
+// ─── Parlay / multi-leg exclusion ─────────────────────────────────────
+// Kalshi multi-leg markets have tickers prefixed with KXMVE or KXMVECROSS.
+// They also carry a mve_collection_ticker field and mve_selected_legs array.
+// We want single-outcome markets only.
+function isParlay(market) {
+  const ticker = (market.ticker ?? '').toUpperCase();
+
+  // Ticker prefix used for all Kalshi multi-leg / parlay markets
+  if (ticker.startsWith('KXMVE')) return true;
+  if (ticker.startsWith('KXMVECROSS')) return true;
+
+  // Belt-and-suspenders: field only present on multi-leg markets
+  if (market.mve_collection_ticker) return true;
+
+  // More than one leg = parlay
+  if (Array.isArray(market.mve_selected_legs) && market.mve_selected_legs.length > 1) return true;
+
+  return false;
+}
+
 // ─── Sports filtering ─────────────────────────────────────────────────
 const SPORTS_KEYWORDS = [
   'NBA', 'NFL', 'MLB', 'NHL', 'NCAAB', 'NCAAF', 'WNBA',
   'PGA', 'UFC', 'MMA', 'EPL', 'FIFA', 'NCAA', 'GOLF', 'BOXING',
-  'SPORT', 'GAME', 'MATCH', 'PLAYER',
   'BASKETBALL', 'FOOTBALL', 'BASEBALL', 'HOCKEY', 'TENNIS',
   'SOCCER', 'WRESTLING',
   'SERIES', 'PLAYOFF', 'CHAMPION', 'FINALS', 'TOURNAMENT',
-  'SCORE', 'WINS', 'BEATS', 'POINTS', 'GOALS', 'RUNS',
 ];
 
 function isSportsMarket(market) {
@@ -37,9 +55,19 @@ function isSportsMarket(market) {
   return SPORTS_KEYWORDS.some(kw => haystack.includes(kw));
 }
 
+// ─── Liquidity filter ─────────────────────────────────────────────────
+// Require at least some trading activity on one side before considering
+// a market for edge detection. Prevents 1¢/99¢ ghost markets from flagging.
+const MIN_LIQUIDITY = 10; // minimum combined volume + open interest (contracts)
+
+function hasLiquidity(market) {
+  const vol = parseFloat(market.volume_fp ?? market.volume ?? 0);
+  const oi  = parseFloat(market.open_interest_fp ?? market.open_interest ?? 0);
+  return (vol + oi) >= MIN_LIQUIDITY;
+}
+
 // ─── Price extraction ─────────────────────────────────────────────────
-// Kalshi returns prices as dollar strings e.g. "0.4440"
-// We convert to cents (integer 1-99) for the edge model
+// Kalshi returns dollar strings e.g. "0.4440" → convert to cents (1–99)
 function dollarsToCents(val) {
   if (!val) return null;
   const n = Math.round(parseFloat(val) * 100);
@@ -47,7 +75,6 @@ function dollarsToCents(val) {
 }
 
 function extractPrices(market) {
-  // Prefer bid prices; fall back to ask prices as proxy
   const yesBid = dollarsToCents(market.yes_bid_dollars)
               ?? dollarsToCents(market.yes_ask_dollars);
   const noBid  = dollarsToCents(market.no_bid_dollars)
@@ -133,14 +160,14 @@ app.get('/api/markets', async (req, res) => {
   const pem = normalisePem(rawKey);
 
   try {
-    // 1. Fetch all open markets
     const allMarkets = await fetchAllMarkets(keyId, pem);
 
-    // 2. Filter to sports
-    const sports = allMarkets.filter(isSportsMarket);
+    const filtered = allMarkets
+      .filter(m => !isParlay(m))       // singles only
+      .filter(m => isSportsMarket(m))  // sports only
+      .filter(m => hasLiquidity(m));   // must have trading activity
 
-    // 3. Extract prices directly from market data (no extra API calls needed)
-    const withPrices = sports
+    const result = filtered
       .map(m => {
         const { yes_bid, no_bid } = extractPrices(m);
         return {
@@ -157,14 +184,12 @@ app.get('/api/markets', async (req, res) => {
           category:      m.category      ?? null,
         };
       })
-      // Only keep markets where we have both sides priced
-      .filter(m => m.yes_bid !== null && m.no_bid !== null);
+      .filter(m => m.yes_bid !== null && m.no_bid !== null); // must have both prices
 
     res.json({
-      count:         withPrices.length,
+      count:         result.length,
       total_fetched: allMarkets.length,
-      sports_found:  sports.length,
-      markets:       withPrices,
+      markets:       result,
     });
 
   } catch (err) {
