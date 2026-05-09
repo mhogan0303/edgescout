@@ -15,11 +15,21 @@ const PORT = process.env.PORT || 3000;
 const BASE_URL = 'https://api.elections.kalshi.com';
 
 // ─── Sports filtering ─────────────────────────────────────────────────
+// Broad list — catches Kalshi's internal naming conventions
 const SPORTS_KEYWORDS = [
-  'NBA', 'NFL', 'MLB', 'NHL', 'NCAAB', 'NCAAF',
-  'PGA', 'UFC', 'MMA', 'TENNIS', 'SOCCER', 'WNBA',
-  'EPL', 'FIFA', 'NCAA', 'GOLF', 'BOXING',
-  'SERIES', 'PLAYOFF', 'CHAMPION',
+  // Standard sport abbreviations
+  'NBA', 'NFL', 'MLB', 'NHL', 'NCAAB', 'NCAAF', 'WNBA',
+  'PGA', 'UFC', 'MMA', 'EPL', 'FIFA', 'NCAA',
+  // Kalshi-specific ticker patterns
+  'SPORT', 'MULTI', 'GAME', 'MATCH', 'PLAYER',
+  // Sport names written out
+  'BASKETBALL', 'FOOTBALL', 'BASEBALL', 'HOCKEY', 'TENNIS',
+  'SOCCER', 'GOLF', 'BOXING', 'WRESTLING',
+  // Common in Kalshi sports titles
+  'SERIES', 'PLAYOFF', 'CHAMPION', 'FINALS', 'TOURNAMENT',
+  'SCORE', 'WINS', 'BEATS', 'POINTS', 'GOALS', 'RUNS',
+  // Player/team context words common in sports props
+  'QUARTERBACK', 'PITCHER', 'TOUCHDOWN',
 ];
 
 function isSportsMarket(market) {
@@ -75,42 +85,46 @@ async function kalshiGet(path, keyId, pem) {
 
 // Fetch all open markets (paginated)
 async function fetchAllMarkets(keyId, pem) {
-  let markets  = [];
-  let cursor   = null;
-  let pages    = 0;
+  let markets = [];
+  let cursor  = null;
+  let pages   = 0;
 
   do {
     const params = new URLSearchParams({ limit: '200', status: 'open' });
     if (cursor) params.set('cursor', cursor);
-
     const path = `/trade-api/v2/markets?${params}`;
     const data = await kalshiGet(path, keyId, pem);
-
     const batch = data.markets ?? [];
     markets = markets.concat(batch);
     cursor  = data.cursor ?? null;
     pages++;
-
     if (batch.length < 200) break;
   } while (cursor && pages < 20);
 
   return markets;
 }
 
-// Fetch orderbook for one ticker — returns { yes_bid, no_bid }
+// Fetch orderbook for one ticker
+// Returns best yes bid and best no bid (in cents, 1-99)
 async function fetchOrderbook(ticker, keyId, pem) {
   try {
     const path = `/trade-api/v2/markets/${ticker}/orderbook`;
     const data = await kalshiGet(path, keyId, pem);
 
+    // Kalshi orderbook response shape:
+    // { orderbook: { yes: [{price, quantity}], no: [{price, quantity}] } }
+    // OR sometimes the levels are under yes_levels / no_levels
     const ob = data.orderbook ?? data;
 
-    const yesBids = (ob.yes ?? [])
-      .filter(l => l.quantity > 0)
+    const yesLevels = ob.yes ?? ob.yes_levels ?? [];
+    const noLevels  = ob.no  ?? ob.no_levels  ?? [];
+
+    const yesBids = yesLevels
+      .filter(l => (l.quantity ?? l.delta ?? 0) > 0)
       .sort((a, b) => b.price - a.price);
 
-    const noBids = (ob.no ?? [])
-      .filter(l => l.quantity > 0)
+    const noBids = noLevels
+      .filter(l => (l.quantity ?? l.delta ?? 0) > 0)
       .sort((a, b) => b.price - a.price);
 
     return {
@@ -144,23 +158,25 @@ app.get('/api/markets', async (req, res) => {
     // 1. Fetch all open markets
     const allMarkets = await fetchAllMarkets(keyId, pem);
 
-    // 2. Filter to sports
+    // 2. Filter to sports using broad keyword list
     const sports = allMarkets.filter(isSportsMarket);
 
-    // 3. Sort by liquidity, take top 60
-    const top = sports
-      .sort((a, b) =>
-        ((b.open_interest ?? 0) + (b.volume ?? 0)) -
-        ((a.open_interest ?? 0) + (a.volume ?? 0))
-      )
-      .slice(0, 60);
+    // 3. Take up to 80 markets — spread across the list
+    //    Don't sort by volume since Kalshi often returns 0 for these fields.
+    //    Instead interleave from front/middle/back to get variety.
+    const MAX = 80;
+    let candidates = sports;
+    if (candidates.length > MAX) {
+      const step = Math.floor(candidates.length / MAX);
+      candidates = candidates.filter((_, i) => i % step === 0).slice(0, MAX);
+    }
 
-    // 4. Fetch orderbook prices in parallel batches of 10
+    // 4. Fetch orderbooks in parallel batches of 10
     const enriched = [];
     const BATCH = 10;
 
-    for (let i = 0; i < top.length; i += BATCH) {
-      const batch  = top.slice(i, i + BATCH);
+    for (let i = 0; i < candidates.length; i += BATCH) {
+      const batch  = candidates.slice(i, i + BATCH);
       const prices = await Promise.all(
         batch.map(m => fetchOrderbook(m.ticker, keyId, pem))
       );
@@ -183,7 +199,7 @@ app.get('/api/markets', async (req, res) => {
       });
     }
 
-    // 5. Only return markets where we got real prices
+    // 5. Only return markets where we got real prices on both sides
     const withPrices = enriched.filter(
       m => m.yes_bid !== null && m.no_bid !== null
     );
@@ -192,11 +208,43 @@ app.get('/api/markets', async (req, res) => {
       count:         withPrices.length,
       total_fetched: allMarkets.length,
       sports_found:  sports.length,
+      sampled:       candidates.length,
       markets:       withPrices,
     });
 
   } catch (err) {
     console.error('[/api/markets]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Debug route — shows raw sample of sports markets WITHOUT orderbook fetch
+// Helps diagnose what data Kalshi is actually returning
+app.get('/api/debug', async (req, res) => {
+  const rawKey = process.env.KALSHI_API_KEY;
+  const keyId  = process.env.KALSHI_KEY_ID;
+  if (!rawKey || !keyId) return res.status(500).json({ error: 'Keys not configured.' });
+
+  const pem = normalisePem(rawKey);
+  try {
+    const allMarkets = await fetchAllMarkets(keyId, pem);
+    const sports     = allMarkets.filter(isSportsMarket);
+
+    // Return first 5 sports markets raw + first orderbook raw
+    const sample    = sports.slice(0, 5);
+    let obSample = null;
+    if (sample.length) {
+      const path = `/trade-api/v2/markets/${sample[0].ticker}/orderbook`;
+      try { obSample = await kalshiGet(path, keyId, pem); } catch (e) { obSample = { error: e.message }; }
+    }
+
+    res.json({
+      total_fetched: allMarkets.length,
+      sports_found:  sports.length,
+      sample_markets: sample,
+      sample_orderbook: obSample,
+    });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
