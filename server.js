@@ -7,62 +7,36 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const __dirname  = dirname(__filename);
 
-const app = express();
+const app  = express();
 const PORT = process.env.PORT || 3000;
+
+const BASE_URL = 'https://api.elections.kalshi.com';
 
 // ─── Sports filtering ─────────────────────────────────────────────────
 const SPORTS_KEYWORDS = [
   'NBA', 'NFL', 'MLB', 'NHL', 'NCAAB', 'NCAAF',
   'PGA', 'UFC', 'MMA', 'TENNIS', 'SOCCER', 'WNBA',
-  'EPL', 'FIFA', 'NCAA', 'GOLF', 'F1', 'NASCAR',
-  'BOXING', 'SERIES', 'PLAYOFF', 'CHAMPION',
+  'EPL', 'FIFA', 'NCAA', 'GOLF', 'BOXING',
+  'SERIES', 'PLAYOFF', 'CHAMPION',
 ];
 
 function isSportsMarket(market) {
   const haystack = [
-    market.ticker ?? '',
+    market.ticker        ?? '',
     market.series_ticker ?? '',
-    market.title ?? '',
-    market.subtitle ?? '',
-    market.category ?? '',
-    market.event_ticker ?? '',
+    market.title         ?? '',
+    market.subtitle      ?? '',
+    market.category      ?? '',
+    market.event_ticker  ?? '',
   ].join(' ').toUpperCase();
   return SPORTS_KEYWORDS.some(kw => haystack.includes(kw));
 }
 
-function pickFields(market) {
-  return {
-    ticker:        market.ticker        ?? null,
-    title:         market.title         ?? null,
-    yes_bid:       market.yes_bid       ?? null,
-    yes_ask:       market.yes_ask       ?? null,
-    no_bid:        market.no_bid        ?? null,
-    no_ask:        market.no_ask        ?? null,
-    volume:        market.volume        ?? 0,
-    open_interest: market.open_interest ?? 0,
-    close_time:    market.close_time    ?? null,
-    status:        market.status        ?? null,
-    series_ticker: market.series_ticker ?? null,
-    event_ticker:  market.event_ticker  ?? null,
-    category:      market.category      ?? null,
-  };
-}
-
 // ─── RSA-PSS Signing ──────────────────────────────────────────────────
-/**
- * Kalshi auth requires three headers per request:
- *   KALSHI-ACCESS-KEY       — the Key ID from your Kalshi dashboard
- *   KALSHI-ACCESS-TIMESTAMP — current Unix time in milliseconds (as string)
- *   KALSHI-ACCESS-SIGNATURE — base64(RSA-PSS-SHA256(timestamp + METHOD + path))
- *
- * The path must NOT include the query string.
- */
 function buildKalshiHeaders(keyId, privateKeyPem, method, urlPath) {
-  // Strip query string from path before signing
-  const pathOnly = urlPath.split('?')[0];
-
+  const pathOnly    = urlPath.split('?')[0];
   const timestampMs = String(Date.now());
   const message     = timestampMs + method.toUpperCase() + pathOnly;
 
@@ -70,103 +44,159 @@ function buildKalshiHeaders(keyId, privateKeyPem, method, urlPath) {
   sign.update(message);
   sign.end();
 
-  // RSA-PSS with SHA-256, salt length = digest length (32 bytes)
-  const signature = sign.sign({
-    key:            privateKeyPem,
-    padding:        6,    // crypto.constants.RSA_PKCS1_PSS_PADDING = 6
-    saltLength:     32,   // SHA-256 digest length
-  }, 'base64');
+  const signature = sign.sign(
+    { key: privateKeyPem, padding: 6, saltLength: 32 },
+    'base64'
+  );
 
   return {
-    'Content-Type':           'application/json',
-    'KALSHI-ACCESS-KEY':      keyId,
+    'Content-Type':            'application/json',
+    'KALSHI-ACCESS-KEY':       keyId,
     'KALSHI-ACCESS-TIMESTAMP': timestampMs,
     'KALSHI-ACCESS-SIGNATURE': signature,
   };
 }
 
-/**
- * Render (and most CI systems) store multiline secrets with literal \n.
- * This normalises them back to real newlines so the PEM parser is happy.
- */
 function normalisePem(raw) {
   return raw.replace(/\\n/g, '\n').trim();
 }
 
-// ─── Kalshi market fetcher ────────────────────────────────────────────
-const BASE_URL  = 'https://api.elections.kalshi.com';
-const API_PATH  = '/trade-api/v2/markets';
+// ─── Kalshi API helpers ───────────────────────────────────────────────
+async function kalshiGet(path, keyId, pem) {
+  const url     = `${BASE_URL}${path}`;
+  const headers = buildKalshiHeaders(keyId, pem, 'GET', path.split('?')[0]);
+  const res     = await fetch(url, { headers });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Kalshi ${res.status} on ${path}: ${body}`);
+  }
+  return res.json();
+}
 
-async function fetchAllMarkets(keyId, privateKeyPem) {
-  let markets = [];
-  let cursor  = null;
-  let pages   = 0;
-  const MAX_PAGES = 20;
+// Fetch all open markets (paginated)
+async function fetchAllMarkets(keyId, pem) {
+  let markets  = [];
+  let cursor   = null;
+  let pages    = 0;
 
   do {
-    // Build query string
     const params = new URLSearchParams({ limit: '200', status: 'open' });
     if (cursor) params.set('cursor', cursor);
 
-    const fullPath = `${API_PATH}?${params.toString()}`;
-    const url      = `${BASE_URL}${fullPath}`;
+    const path = `/trade-api/v2/markets?${params}`;
+    const data = await kalshiGet(path, keyId, pem);
 
-    const headers = buildKalshiHeaders(keyId, privateKeyPem, 'GET', API_PATH);
-
-    const res = await fetch(url, { headers });
-
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`Kalshi API error ${res.status}: ${body}`);
-    }
-
-    const data  = await res.json();
     const batch = data.markets ?? [];
     markets = markets.concat(batch);
     cursor  = data.cursor ?? null;
     pages++;
 
     if (batch.length < 200) break;
-  } while (cursor && pages < MAX_PAGES);
+  } while (cursor && pages < 20);
 
   return markets;
+}
+
+// Fetch orderbook for one ticker — returns { yes_bid, no_bid }
+async function fetchOrderbook(ticker, keyId, pem) {
+  try {
+    const path = `/trade-api/v2/markets/${ticker}/orderbook`;
+    const data = await kalshiGet(path, keyId, pem);
+
+    const ob = data.orderbook ?? data;
+
+    const yesBids = (ob.yes ?? [])
+      .filter(l => l.quantity > 0)
+      .sort((a, b) => b.price - a.price);
+
+    const noBids = (ob.no ?? [])
+      .filter(l => l.quantity > 0)
+      .sort((a, b) => b.price - a.price);
+
+    return {
+      yes_bid: yesBids.length ? yesBids[0].price : null,
+      no_bid:  noBids.length  ? noBids[0].price  : null,
+    };
+  } catch {
+    return { yes_bid: null, no_bid: null };
+  }
 }
 
 // ─── Middleware ───────────────────────────────────────────────────────
 app.use(cors());
 app.use(express.static(join(__dirname, 'public')));
 
-// ─── Routes ───────────────────────────────────────────────────────────
+// ─── Main route ───────────────────────────────────────────────────────
 app.get('/api/markets', async (req, res) => {
   const rawKey = process.env.KALSHI_API_KEY;
   const keyId  = process.env.KALSHI_KEY_ID;
 
-  // Validate env vars
   if (!rawKey || rawKey === 'your_key_here') {
-    return res.status(500).json({
-      error: 'KALSHI_API_KEY is not set. Paste your RSA private key PEM into the Render environment variable.',
-    });
+    return res.status(500).json({ error: 'KALSHI_API_KEY not configured.' });
   }
   if (!keyId || keyId === 'your_key_id_here') {
-    return res.status(500).json({
-      error: 'KALSHI_KEY_ID is not set. Add your Key ID from the Kalshi dashboard as a Render environment variable.',
-    });
+    return res.status(500).json({ error: 'KALSHI_KEY_ID not configured.' });
   }
 
-  const privateKeyPem = normalisePem(rawKey);
+  const pem = normalisePem(rawKey);
 
   try {
-    const allMarkets    = await fetchAllMarkets(keyId, privateKeyPem);
-    const sportsMarkets = allMarkets.filter(isSportsMarket);
-    const result        = sportsMarkets.map(pickFields);
+    // 1. Fetch all open markets
+    const allMarkets = await fetchAllMarkets(keyId, pem);
+
+    // 2. Filter to sports
+    const sports = allMarkets.filter(isSportsMarket);
+
+    // 3. Sort by liquidity, take top 60
+    const top = sports
+      .sort((a, b) =>
+        ((b.open_interest ?? 0) + (b.volume ?? 0)) -
+        ((a.open_interest ?? 0) + (a.volume ?? 0))
+      )
+      .slice(0, 60);
+
+    // 4. Fetch orderbook prices in parallel batches of 10
+    const enriched = [];
+    const BATCH = 10;
+
+    for (let i = 0; i < top.length; i += BATCH) {
+      const batch  = top.slice(i, i + BATCH);
+      const prices = await Promise.all(
+        batch.map(m => fetchOrderbook(m.ticker, keyId, pem))
+      );
+      batch.forEach((m, idx) => {
+        enriched.push({
+          ticker:        m.ticker        ?? null,
+          title:         m.title         ?? null,
+          yes_bid:       prices[idx].yes_bid,
+          yes_ask:       null,
+          no_bid:        prices[idx].no_bid,
+          no_ask:        null,
+          volume:        m.volume        ?? 0,
+          open_interest: m.open_interest ?? 0,
+          close_time:    m.close_time    ?? null,
+          status:        m.status        ?? null,
+          series_ticker: m.series_ticker ?? null,
+          event_ticker:  m.event_ticker  ?? null,
+          category:      m.category      ?? null,
+        });
+      });
+    }
+
+    // 5. Only return markets where we got real prices
+    const withPrices = enriched.filter(
+      m => m.yes_bid !== null && m.no_bid !== null
+    );
 
     res.json({
-      count:         result.length,
+      count:         withPrices.length,
       total_fetched: allMarkets.length,
-      markets:       result,
+      sports_found:  sports.length,
+      markets:       withPrices,
     });
+
   } catch (err) {
-    console.error('[/api/markets] Error:', err.message);
+    console.error('[/api/markets]', err.message);
     res.status(500).json({ error: err.message });
   }
 });
