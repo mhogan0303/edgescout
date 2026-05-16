@@ -88,37 +88,15 @@ function enrichTitle(market) {
   const title  = market.title  ?? ticker;
   const upper  = ticker.toUpperCase();
 
-  // Extract the suffix after the last hyphen
-  const parts  = ticker.split('-');
-  const suffix = parts[parts.length - 1] ?? '';
-  const num    = parseInt(suffix.replace(/[^0-9]/g, ''), 10);
+  const isGameWinner = upper.includes('GAME') || upper.includes('SERIES') || upper.includes('FIGHT');
 
-  // MLB Total Runs — suffix is a whole number representing the line
-  // e.g. -9 means "over 8.5 runs scored"
-  if (upper.includes('MLBTOTAL') && !isNaN(num)) {
-    return `${title} — Over ${num - 0.5} runs`;
+  if (isGameWinner) {
+    const parts = ticker.split('-');
+    const teamSuffix = parts[parts.length - 1];
+    if (teamSuffix && !teamSuffix.match(/^\d+$/)) {
+      return `${title} — YES = ${teamSuffix} wins`;
+    }
   }
-
-  // MLB Spread — suffix like PHI2, STL3, DET4
-  // number = runs margin, e.g. PHI2 = "PHI wins by over 1.5 runs"
-  if (upper.includes('MLBSPREAD') && !isNaN(num) && num > 0) {
-    const team = suffix.replace(/[0-9]/g, '');
-    return `${title} — ${team} by ${num - 0.5}+ runs`;
-  }
-
-  // NBA Total Points — suffix is the line, e.g. 220 = over 219.5
-  if (upper.includes('NBATOTAL') && !isNaN(num)) {
-    return `${title} — Over ${num - 0.5} pts`;
-  }
-
-  // NBA Spread — suffix like OKC6, SAS14
-  if (upper.includes('NBASPREAD') && !isNaN(num) && num > 0) {
-    const team = suffix.replace(/[0-9]/g, '');
-    return `${title} — ${team} by ${num - 0.5}+ pts`;
-  }
-
-  // NHL / NFL game winner — suffix is team abbreviation, already clear
-  // PGA / UFC — title is already descriptive enough
 
   return title;
 }
@@ -161,13 +139,13 @@ async function kalshiGet(path, keyId, pem) {
 
 async function fetchAllMarkets(keyId, pem) {
   const SERIES = [
-    'KXMLBGAME', 'KXMLBSPREAD', 'KXMLBTOTAL',
-    'KXNBAGAME', 'KXNBASPREAD', 'KXNBATOTAL', 'KXNBASERIES',
-    'KXNHLGAME',
-    'KXNFLGAME',
-    'KXUFCFIGHT',
-    'KXPGATOUR',
-  ];
+  'KXMLBGAME',
+  'KXNBAGAME',
+  'KXNBASERIES',
+  'KXNHLGAME',
+  'KXNFLGAME',
+  'KXUFCFIGHT',
+];
 
   let allMarkets = [];
 
