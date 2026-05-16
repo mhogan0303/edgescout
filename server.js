@@ -15,42 +15,40 @@ const PORT = process.env.PORT || 3000;
 const BASE_URL = 'https://api.elections.kalshi.com';
 
 // ─── Parlay exclusion ─────────────────────────────────────────────────
-// Only exclude markets that genuinely have multiple legs.
-// Do NOT exclude based on ticker prefix alone — Kalshi uses KXMVE
-// as a prefix on single-leg markets too.
+// Only block markets with genuinely multiple legs.
+// Never block based on ticker prefix alone.
 function isParlay(market) {
+  if (Array.isArray(market.mve_selected_legs) && market.mve_selected_legs.length > 1) return true;
+  if (market.mve_collection_ticker) {
+    const yesCount = ((market.title ?? '').match(/\byes\b/gi) ?? []).length;
+    if (yesCount > 1) return true;
+  }
   return false;
 }
 
 // ─── Sports filtering ─────────────────────────────────────────────────
-const SPORTS_KEYWORDS = [
-  'NBA', 'NFL', 'MLB', 'NHL', 'NCAAB', 'NCAAF', 'WNBA',
-  'PGA', 'UFC', 'MMA', 'EPL', 'FIFA', 'NCAA', 'GOLF', 'BOXING',
-  'BASKETBALL', 'FOOTBALL', 'BASEBALL', 'HOCKEY', 'TENNIS',
-  'SOCCER', 'WRESTLING',
-  'SERIES', 'PLAYOFF', 'CHAMPION', 'FINALS', 'TOURNAMENT',
+// Match on Kalshi's actual ticker prefixes for single-game markets.
+const SPORT_PREFIXES = [
+  'KXNBA', 'KXNFL', 'KXMLB', 'KXNHL', 'KXNCAA',
+  'KXPGA', 'KXUFC', 'KXMMA', 'KXEPL', 'KXMLS',
+  'KXTENNIS', 'KXSOCCER', 'KXWNBA', 'KXGOLF',
 ];
 
 function isSportsMarket(market) {
-  const ticker = (market.ticker ?? '').toUpperCase();
-  const event  = (market.event_ticker ?? '').toUpperCase();
-  const series = (market.series_ticker ?? '').toUpperCase();
-  const haystack = ticker + ' ' + event + ' ' + series;
-
-  const SPORT_PREFIXES = [
-    'KXNBA', 'KXNFL', 'KXMLB', 'KXNHL', 'KXNCAA',
-    'KXPGA', 'KXUFC', 'KXMMA', 'KXEPL', 'KXMLS',
-    'KXTENNIS', 'KXSOCCER', 'KXWNBA', 'KXGOLF',
-  ];
-
-  return SPORT_PREFIXES.some(prefix => haystack.includes(prefix));
+  const haystack = [
+    market.ticker        ?? '',
+    market.event_ticker  ?? '',
+    market.series_ticker ?? '',
+  ].join(' ').toUpperCase();
+  return SPORT_PREFIXES.some(p => haystack.includes(p));
 }
 
 // ─── Price extraction ─────────────────────────────────────────────────
+// Kalshi returns dollar strings e.g. "0.4440" → convert to cents (1–100)
 function dollarsToCents(val) {
   if (!val) return null;
   const n = Math.round(parseFloat(val) * 100);
-return (n > 0 && n <= 100) ? n : null;
+  return (n > 0 && n <= 100) ? n : null;
 }
 
 function extractPrices(market) {
@@ -71,16 +69,13 @@ function buildKalshiHeaders(keyId, privateKeyPem, method, urlPath) {
   const pathOnly    = urlPath.split('?')[0];
   const timestampMs = String(Date.now());
   const message     = timestampMs + method.toUpperCase() + pathOnly;
-
   const sign = createSign('RSA-SHA256');
   sign.update(message);
   sign.end();
-
   const signature = sign.sign(
     { key: privateKeyPem, padding: 6, saltLength: 32 },
     'base64'
   );
-
   return {
     'Content-Type':            'application/json',
     'KALSHI-ACCESS-KEY':       keyId,
@@ -109,7 +104,6 @@ async function fetchAllMarkets(keyId, pem) {
   let markets = [];
   let cursor  = null;
   let pages   = 0;
-
   do {
     const params = new URLSearchParams({ limit: '200', status: 'open' });
     if (cursor) params.set('cursor', cursor);
@@ -121,7 +115,6 @@ async function fetchAllMarkets(keyId, pem) {
     pages++;
     if (batch.length < 200) break;
   } while (cursor && pages < 20);
-
   return markets;
 }
 
@@ -144,8 +137,7 @@ app.get('/api/markets', async (req, res) => {
   const pem = normalisePem(rawKey);
 
   try {
-    const allMarkets = await fetchAllMarkets(keyId, pem);
-
+    const allMarkets        = await fetchAllMarkets(keyId, pem);
     const afterParlayFilter = allMarkets.filter(m => !isParlay(m));
     const afterSportsFilter = afterParlayFilter.filter(m => isSportsMarket(m));
     const afterPriceFilter  = afterSportsFilter.filter(m => hasBothPrices(m));
@@ -171,29 +163,23 @@ app.get('/api/markets', async (req, res) => {
       count:         result.length,
       total_fetched: allMarkets.length,
       debug_counts: {
-        total:           allMarkets.length,
-        after_no_parlay: afterParlayFilter.length,
-        after_sports:    afterSportsFilter.length,
-        after_prices:    afterPriceFilter.length,
-        non_parlay_sample: afterParlayFilter.slice(0, 5).map(m => ({
-  ticker:          m.ticker,
-  title:           m.title,
-  event_ticker:    m.event_ticker,
-  yes_bid_dollars: m.yes_bid_dollars,
-  no_bid_dollars:  m.no_bid_dollars,
-})),
-        unpriced_sample: afterSportsFilter
-          .filter(m => !hasBothPrices(m))
-          .slice(0, 3)
-          .map(m => ({
-            ticker:          m.ticker,
-            title:           m.title,
-            yes_bid_dollars: m.yes_bid_dollars,
-            no_bid_dollars:  m.no_bid_dollars,
-            yes_ask_dollars: m.yes_ask_dollars,
-            no_ask_dollars:  m.no_ask_dollars,
-            close_time:      m.close_time,
-          })),
+        total:             allMarkets.length,
+        after_no_parlay:   afterParlayFilter.length,
+        after_sports:      afterSportsFilter.length,
+        after_prices:      afterPriceFilter.length,
+        non_parlay_sample: afterParlayFilter.slice(0, 3).map(m => ({
+          ticker:          m.ticker,
+          title:           m.title,
+          event_ticker:    m.event_ticker,
+          yes_bid_dollars: m.yes_bid_dollars,
+          no_bid_dollars:  m.no_bid_dollars,
+        })),
+        sports_sample: afterSportsFilter.slice(0, 3).map(m => ({
+          ticker:          m.ticker,
+          title:           m.title,
+          yes_bid_dollars: m.yes_bid_dollars,
+          no_bid_dollars:  m.no_bid_dollars,
+        })),
       },
       markets: result,
     });
