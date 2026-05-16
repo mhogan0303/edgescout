@@ -62,19 +62,13 @@ function isTwoSided(market) {
   const { yes_bid, no_bid } = extractPrices(market);
   if (!yes_bid || !no_bid) return false;
 
-  // Basic sanity check — prices must add up to something reasonable
+  // Prices must add up to a reasonable two-sided market
   const total = yes_bid + no_bid;
   if (total < 85 || total > 115) return false;
 
+  // Moneylines only for now — exclude totals and spreads entirely
   const ticker = (market.ticker ?? '').toUpperCase();
-  const isTotal = ticker.includes('TOTAL');
-
-  // For totals: only keep lines where YES is 30-70c.
-  // This targets the most competitive line per game (e.g. 8.5/9.5 in MLB).
-  // Extreme lines like "Over 2.5 runs" (96c) are expected prices, not edges.
-  // For game winners and spreads: keep full price range.
-  // A moneyline at 80c/19c could still be genuinely mispriced.
-  if (isTotal && (yes_bid < 30 || yes_bid > 70)) return false;
+  if (ticker.includes('TOTAL') || ticker.includes('SPREAD')) return false;
 
   return true;
 }
