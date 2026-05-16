@@ -35,8 +35,15 @@ function isSportsMarket(market) {
     market.event_ticker  ?? '',
     market.series_ticker ?? '',
   ].join(' ').toUpperCase();
+
+  const SPORT_PREFIXES = [
+    'KXMLB', 'KXNBA', 'KXNHL', 'KXNFL',
+    'KXUFC', 'KXPGA', 'KXWNBA', 'KXMLS',
+  ];
+
   return SPORT_PREFIXES.some(p => haystack.includes(p));
 }
+This is clean and precise — only the exact prefixes Kalshi actually uses, matched against ticker and event_ticker only. No guessing from titles. Make that swap and commit.
 
 // ─── Price extraction ─────────────────────────────────────────────────
 // Kalshi returns dollar strings e.g. "0.4440" → convert to cents (1–100)
