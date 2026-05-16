@@ -14,9 +14,7 @@ const PORT = process.env.PORT || 3000;
 
 const BASE_URL = 'https://api.elections.kalshi.com';
 
-// ─── Parlay / multi-leg exclusion ─────────────────────────────────────
-// Kalshi multi-leg markets use the KXMVE ticker prefix and carry
-// mve_collection_ticker / mve_selected_legs fields.
+// ─── Parlay exclusion ─────────────────────────────────────────────────
 function isParlay(market) {
   const ticker = (market.ticker ?? '').toUpperCase();
   if (ticker.startsWith('KXMVE')) return true;
@@ -47,7 +45,6 @@ function isSportsMarket(market) {
 }
 
 // ─── Price extraction ─────────────────────────────────────────────────
-// Kalshi returns dollar strings e.g. "0.4440" → convert to cents (1–99)
 function dollarsToCents(val) {
   if (!val) return null;
   const n = Math.round(parseFloat(val) * 100);
@@ -55,12 +52,16 @@ function dollarsToCents(val) {
 }
 
 function extractPrices(market) {
-  // Prefer bid; fall back to ask as proxy when no active bids
   const yesBid = dollarsToCents(market.yes_bid_dollars)
               ?? dollarsToCents(market.yes_ask_dollars);
   const noBid  = dollarsToCents(market.no_bid_dollars)
               ?? dollarsToCents(market.no_ask_dollars);
   return { yes_bid: yesBid, no_bid: noBid };
+}
+
+function hasBothPrices(market) {
+  const { yes_bid, no_bid } = extractPrices(market);
+  return yes_bid !== null && no_bid !== null;
 }
 
 // ─── RSA-PSS Signing ──────────────────────────────────────────────────
@@ -143,31 +144,52 @@ app.get('/api/markets', async (req, res) => {
   try {
     const allMarkets = await fetchAllMarkets(keyId, pem);
 
-    const result = allMarkets
-      .filter(m => !isParlay(m))        // singles only
-      .filter(m => isSportsMarket(m))   // sports only
-      .map(m => {
-        const { yes_bid, no_bid } = extractPrices(m);
-        return {
-          ticker:        m.ticker        ?? null,
-          title:         m.title         ?? null,
-          yes_bid,
-          no_bid,
-          volume:        Math.round(parseFloat(m.volume_fp        ?? m.volume        ?? 0)),
-          open_interest: Math.round(parseFloat(m.open_interest_fp ?? m.open_interest ?? 0)),
-          close_time:    m.close_time    ?? null,
-          status:        m.status        ?? null,
-          series_ticker: m.series_ticker ?? null,
-          event_ticker:  m.event_ticker  ?? null,
-          category:      m.category      ?? null,
-        };
-      })
-      .filter(m => m.yes_bid !== null && m.no_bid !== null); // both sides must be priced
+    // Apply filters one at a time and track counts at each stage
+    const afterParlayFilter = allMarkets.filter(m => !isParlay(m));
+    const afterSportsFilter = afterParlayFilter.filter(m => isSportsMarket(m));
+    const afterPriceFilter  = afterSportsFilter.filter(m => hasBothPrices(m));
+
+    const result = afterPriceFilter.map(m => {
+      const { yes_bid, no_bid } = extractPrices(m);
+      return {
+        ticker:        m.ticker        ?? null,
+        title:         m.title         ?? null,
+        yes_bid,
+        no_bid,
+        volume:        Math.round(parseFloat(m.volume_fp        ?? m.volume        ?? 0)),
+        open_interest: Math.round(parseFloat(m.open_interest_fp ?? m.open_interest ?? 0)),
+        close_time:    m.close_time    ?? null,
+        status:        m.status        ?? null,
+        series_ticker: m.series_ticker ?? null,
+        event_ticker:  m.event_ticker  ?? null,
+        category:      m.category      ?? null,
+      };
+    });
 
     res.json({
       count:         result.length,
       total_fetched: allMarkets.length,
-      markets:       result,
+      // Shows exactly where markets are being dropped
+      debug_counts: {
+        total:            allMarkets.length,
+        after_no_parlay:  afterParlayFilter.length,
+        after_sports:     afterSportsFilter.length,
+        after_prices:     afterPriceFilter.length,
+        // Sample of sports markets that have NO prices — helps diagnose timing
+        unpriced_sample:  afterSportsFilter
+          .filter(m => !hasBothPrices(m))
+          .slice(0, 3)
+          .map(m => ({
+            ticker:          m.ticker,
+            title:           m.title,
+            yes_bid_dollars: m.yes_bid_dollars,
+            no_bid_dollars:  m.no_bid_dollars,
+            yes_ask_dollars: m.yes_ask_dollars,
+            no_ask_dollars:  m.no_ask_dollars,
+            close_time:      m.close_time,
+          })),
+      },
+      markets: result,
     });
 
   } catch (err) {
