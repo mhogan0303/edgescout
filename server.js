@@ -18,11 +18,6 @@ const BASE_URL = 'https://api.elections.kalshi.com';
 // Only block markets with genuinely multiple legs.
 // Never block based on ticker prefix alone.
 function isParlay(market) {
-  if (Array.isArray(market.mve_selected_legs) && market.mve_selected_legs.length > 1) return true;
-  if (market.mve_collection_ticker) {
-    const yesCount = ((market.title ?? '').match(/\byes\b/gi) ?? []).length;
-    if (yesCount > 1) return true;
-  }
   return false;
 }
 
