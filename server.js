@@ -62,15 +62,49 @@ function isTwoSided(market) {
   const { yes_bid, no_bid } = extractPrices(market);
   if (!yes_bid || !no_bid) return false;
 
-  // Prices must add up to a reasonable two-sided market
+  // Basic sanity check — prices must add up to something reasonable
   const total = yes_bid + no_bid;
   if (total < 85 || total > 115) return false;
 
-  // Moneylines only for now — exclude totals and spreads entirely
   const ticker = (market.ticker ?? '').toUpperCase();
-  if (ticker.includes('TOTAL') || ticker.includes('SPREAD')) return false;
+  const isTotal = ticker.includes('TOTAL');
+
+  // For totals: only keep lines where YES is 30-70c.
+  // This targets the most competitive line per game (e.g. 8.5/9.5 in MLB).
+  // Extreme lines like "Over 2.5 runs" (96c) are expected prices, not edges.
+  // For game winners and spreads: keep full price range.
+  // A moneyline at 80c/19c could still be genuinely mispriced.
+  if (isTotal && (yes_bid < 30 || yes_bid > 70)) return false;
 
   return true;
+}
+
+// ─── Actionable timing filter ─────────────────────────────────────────
+// Different sports have different meaningful windows:
+//
+//   MLB, NBA, NHL, UFC: fast-moving schedules — only show games
+//   starting within the next 48 hours. A Colorado vs Texas game
+//   5 days out hasn't had price discovery yet and isn't actionable.
+//
+//   NFL: season lines open weeks in advance and that's exactly where
+//   the opportunity is — early mispricing before sharp money moves in.
+//   Keep the full window open.
+//
+//   NBASERIES: playoff series markets are long-running by nature, keep open.
+
+function isActionable(market) {
+  const ticker    = (market.ticker ?? '').toUpperCase();
+  const closeTime = market.close_time;
+
+  // If no close time, include it (don't silently drop)
+  if (!closeTime) return true;
+
+  // NFL and NBA series — keep full window open
+  if (ticker.includes('KXNFL') || ticker.includes('KXNBASERIES')) return true;
+
+  // Everything else: must close within 48 hours
+  const hoursUntilClose = (new Date(closeTime) - new Date()) / (1000 * 60 * 60);
+  return hoursUntilClose <= 48;
 }
 
 // ─── Title enrichment ─────────────────────────────────────────────────
@@ -88,15 +122,37 @@ function enrichTitle(market) {
   const title  = market.title  ?? ticker;
   const upper  = ticker.toUpperCase();
 
-  const isGameWinner = upper.includes('GAME') || upper.includes('SERIES') || upper.includes('FIGHT');
+  // Extract the suffix after the last hyphen
+  const parts  = ticker.split('-');
+  const suffix = parts[parts.length - 1] ?? '';
+  const num    = parseInt(suffix.replace(/[^0-9]/g, ''), 10);
 
-  if (isGameWinner) {
-    const parts = ticker.split('-');
-    const teamSuffix = parts[parts.length - 1];
-    if (teamSuffix && !teamSuffix.match(/^\d+$/)) {
-      return `${title} — YES = ${teamSuffix} wins`;
-    }
+  // MLB Total Runs — suffix is a whole number representing the line
+  // e.g. -9 means "over 8.5 runs scored"
+  if (upper.includes('MLBTOTAL') && !isNaN(num)) {
+    return `${title} — Over ${num - 0.5} runs`;
   }
+
+  // MLB Spread — suffix like PHI2, STL3, DET4
+  // number = runs margin, e.g. PHI2 = "PHI wins by over 1.5 runs"
+  if (upper.includes('MLBSPREAD') && !isNaN(num) && num > 0) {
+    const team = suffix.replace(/[0-9]/g, '');
+    return `${title} — ${team} by ${num - 0.5}+ runs`;
+  }
+
+  // NBA Total Points — suffix is the line, e.g. 220 = over 219.5
+  if (upper.includes('NBATOTAL') && !isNaN(num)) {
+    return `${title} — Over ${num - 0.5} pts`;
+  }
+
+  // NBA Spread — suffix like OKC6, SAS14
+  if (upper.includes('NBASPREAD') && !isNaN(num) && num > 0) {
+    const team = suffix.replace(/[0-9]/g, '');
+    return `${title} — ${team} by ${num - 0.5}+ pts`;
+  }
+
+  // NHL / NFL game winner — suffix is team abbreviation, already clear
+  // PGA / UFC — title is already descriptive enough
 
   return title;
 }
@@ -139,13 +195,13 @@ async function kalshiGet(path, keyId, pem) {
 
 async function fetchAllMarkets(keyId, pem) {
   const SERIES = [
-  'KXMLBGAME',
-  'KXNBAGAME',
-  'KXNBASERIES',
-  'KXNHLGAME',
-  'KXNFLGAME',
-  'KXUFCFIGHT',
-];
+    'KXMLBGAME', 'KXMLBSPREAD', 'KXMLBTOTAL',
+    'KXNBAGAME', 'KXNBASPREAD', 'KXNBATOTAL', 'KXNBASERIES',
+    'KXNHLGAME',
+    'KXNFLGAME',
+    'KXUFCFIGHT',
+    'KXPGATOUR',
+  ];
 
   let allMarkets = [];
 
@@ -192,6 +248,7 @@ app.get('/api/markets', async (req, res) => {
       .filter(m => isSportsMarket(m))   // sports only
       .filter(m => hasBothPrices(m))    // must have both sides priced
       .filter(m => isTwoSided(m))       // must be a live two-sided market
+      .filter(m => isActionable(m))     // must be within the actionable window
       .map(m => {
         const { yes_bid, no_bid } = extractPrices(m);
         return {
