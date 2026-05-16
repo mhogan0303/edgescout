@@ -102,21 +102,33 @@ async function kalshiGet(path, keyId, pem) {
 }
 
 async function fetchAllMarkets(keyId, pem) {
-  let markets = [];
-  let cursor  = null;
-  let pages   = 0;
-  do {
-    const params = new URLSearchParams({ limit: '200', status: 'open' });
-    if (cursor) params.set('cursor', cursor);
+  const SERIES = [
+    'KXMLBGAME', 'KXMLBSPREAD', 'KXMLBTOTAL',
+    'KXNBAGAME', 'KXNBASPREAD', 'KXNBATOTAL', 'KXNBASERIES',
+    'KXNHLGAME',
+    'KXNFLGAME',
+    'KXUFCFIGHT',
+    'KXPGATOUR',
+  ];
+
+  let allMarkets = [];
+
+  for (const series of SERIES) {
+    const params = new URLSearchParams({ 
+      limit: '200', 
+      status: 'open',
+      series_ticker: series,
+    });
     const path = `/trade-api/v2/markets?${params}`;
-    const data = await kalshiGet(path, keyId, pem);
-    const batch = data.markets ?? [];
-    markets = markets.concat(batch);
-    cursor  = data.cursor ?? null;
-    pages++;
-    if (batch.length < 200) break;
-  } while (cursor && pages < 20);
-  return markets;
+    try {
+      const data = await kalshiGet(path, keyId, pem);
+      allMarkets = allMarkets.concat(data.markets ?? []);
+    } catch (e) {
+      console.error(`Failed to fetch series ${series}:`, e.message);
+    }
+  }
+
+  return allMarkets;
 }
 
 // ─── Middleware ───────────────────────────────────────────────────────
