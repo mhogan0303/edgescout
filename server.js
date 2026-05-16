@@ -50,7 +50,7 @@ function isSportsMarket(market) {
 function dollarsToCents(val) {
   if (!val) return null;
   const n = Math.round(parseFloat(val) * 100);
-  return (n > 0 && n < 100) ? n : null;
+return (n > 0 && n <= 100) ? n : null;
 }
 
 function extractPrices(market) {
