@@ -19,12 +19,6 @@ const BASE_URL = 'https://api.elections.kalshi.com';
 // Do NOT exclude based on ticker prefix alone — Kalshi uses KXMVE
 // as a prefix on single-leg markets too.
 function isParlay(market) {
-  if (Array.isArray(market.mve_selected_legs) && market.mve_selected_legs.length > 1) return true;
-  if (market.mve_collection_ticker) {
-    const title = market.title ?? '';
-    const yesCount = (title.match(/\byes\b/gi) ?? []).length;
-    if (yesCount > 1) return true;
-  }
   return false;
 }
 
