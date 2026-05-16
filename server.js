@@ -19,9 +19,7 @@ const BASE_URL = 'https://api.elections.kalshi.com';
 // Do NOT exclude based on ticker prefix alone — Kalshi uses KXMVE
 // as a prefix on single-leg markets too.
 function isParlay(market) {
-  // Has more than one leg = definitely a parlay
   if (Array.isArray(market.mve_selected_legs) && market.mve_selected_legs.length > 1) return true;
-  // Has a collection ticker AND multiple legs in the title (comma-separated "yes X, yes Y")
   if (market.mve_collection_ticker) {
     const title = market.title ?? '';
     const yesCount = (title.match(/\byes\b/gi) ?? []).length;
@@ -180,6 +178,13 @@ app.get('/api/markets', async (req, res) => {
         after_no_parlay: afterParlayFilter.length,
         after_sports:    afterSportsFilter.length,
         after_prices:    afterPriceFilter.length,
+        non_parlay_sample: afterParlayFilter.slice(0, 5).map(m => ({
+  ticker:          m.ticker,
+  title:           m.title,
+  event_ticker:    m.event_ticker,
+  yes_bid_dollars: m.yes_bid_dollars,
+  no_bid_dollars:  m.no_bid_dollars,
+})),
         unpriced_sample: afterSportsFilter
           .filter(m => !hasBothPrices(m))
           .slice(0, 3)
