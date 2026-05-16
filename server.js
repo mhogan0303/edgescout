@@ -32,15 +32,18 @@ const SPORTS_KEYWORDS = [
 ];
 
 function isSportsMarket(market) {
-  const haystack = [
-    market.ticker        ?? '',
-    market.series_ticker ?? '',
-    market.title         ?? '',
-    market.subtitle      ?? '',
-    market.category      ?? '',
-    market.event_ticker  ?? '',
-  ].join(' ').toUpperCase();
-  return SPORTS_KEYWORDS.some(kw => haystack.includes(kw));
+  const ticker = (market.ticker ?? '').toUpperCase();
+  const event  = (market.event_ticker ?? '').toUpperCase();
+  const series = (market.series_ticker ?? '').toUpperCase();
+  const haystack = ticker + ' ' + event + ' ' + series;
+
+  const SPORT_PREFIXES = [
+    'KXNBA', 'KXNFL', 'KXMLB', 'KXNHL', 'KXNCAA',
+    'KXPGA', 'KXUFC', 'KXMMA', 'KXEPL', 'KXMLS',
+    'KXTENNIS', 'KXSOCCER', 'KXWNBA', 'KXGOLF',
+  ];
+
+  return SPORT_PREFIXES.some(prefix => haystack.includes(prefix));
 }
 
 // ─── Price extraction ─────────────────────────────────────────────────
