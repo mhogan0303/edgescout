@@ -15,18 +15,14 @@ const PORT = process.env.PORT || 3000;
 const BASE_URL = 'https://api.elections.kalshi.com';
 
 // ─── Parlay exclusion ─────────────────────────────────────────────────
-// Only block markets with genuinely multiple legs.
-// Never block based on ticker prefix alone.
 function isParlay(market) {
-  return false;
+  return false; // handled by series-level fetching
 }
 
 // ─── Sports filtering ─────────────────────────────────────────────────
-// Match on Kalshi's actual ticker prefixes for single-game markets.
 const SPORT_PREFIXES = [
-  'KXNBA', 'KXNFL', 'KXMLB', 'KXNHL', 'KXNCAA',
-  'KXPGA', 'KXUFC', 'KXMMA', 'KXEPL', 'KXMLS',
-  'KXTENNIS', 'KXSOCCER', 'KXWNBA', 'KXGOLF',
+  'KXMLB', 'KXNBA', 'KXNHL', 'KXNFL',
+  'KXUFC', 'KXPGA', 'KXWNBA', 'KXMLS',
 ];
 
 function isSportsMarket(market) {
@@ -35,17 +31,10 @@ function isSportsMarket(market) {
     market.event_ticker  ?? '',
     market.series_ticker ?? '',
   ].join(' ').toUpperCase();
-
-  const SPORT_PREFIXES = [
-    'KXMLB', 'KXNBA', 'KXNHL', 'KXNFL',
-    'KXUFC', 'KXPGA', 'KXWNBA', 'KXMLS',
-  ];
-
   return SPORT_PREFIXES.some(p => haystack.includes(p));
 }
 
 // ─── Price extraction ─────────────────────────────────────────────────
-// Kalshi returns dollar strings e.g. "0.4440" → convert to cents (1–100)
 function dollarsToCents(val) {
   if (!val) return null;
   const n = Math.round(parseFloat(val) * 100);
@@ -63,6 +52,67 @@ function extractPrices(market) {
 function hasBothPrices(market) {
   const { yes_bid, no_bid } = extractPrices(market);
   return yes_bid !== null && no_bid !== null;
+}
+
+// ─── Two-sided market check ───────────────────────────────────────────
+// Filters out markets that are already resolving (96¢/2¢ type situations)
+// and markets with negative vig (broken pricing).
+// A healthy two-sided market has yes+no between 85 and 115 cents.
+function isTwoSided(market) {
+  const { yes_bid, no_bid } = extractPrices(market);
+  if (!yes_bid || !no_bid) return false;
+  const total = yes_bid + no_bid;
+  return total >= 85 && total <= 115;
+}
+
+// ─── Title enrichment ─────────────────────────────────────────────────
+// Kalshi titles like "Philadelphia vs Pittsburgh Total Runs?" don't include
+// the actual line. We parse it from the ticker suffix and append it.
+//
+// Ticker examples:
+//   KXMLBTOTAL-26MAY161605PHIPIT-9    → "Over 8.5 runs"
+//   KXMLBSPREAD-26MAY161605PHIPIT-PHI2 → "PHI wins by over 1.5 runs"
+//   KXNBATOTAL-26MAY18SASOKC-220      → "Over 219.5 points"
+//   KXNBASPREAD-26MAY18SASOKC-OKC6    → "OKC wins by over 5.5 points"
+
+function enrichTitle(market) {
+  const ticker = market.ticker ?? '';
+  const title  = market.title  ?? ticker;
+  const upper  = ticker.toUpperCase();
+
+  // Extract the suffix after the last hyphen
+  const parts  = ticker.split('-');
+  const suffix = parts[parts.length - 1] ?? '';
+  const num    = parseInt(suffix.replace(/[^0-9]/g, ''), 10);
+
+  // MLB Total Runs — suffix is a whole number representing the line
+  // e.g. -9 means "over 8.5 runs scored"
+  if (upper.includes('MLBTOTAL') && !isNaN(num)) {
+    return `${title} — Over ${num - 0.5} runs`;
+  }
+
+  // MLB Spread — suffix like PHI2, STL3, DET4
+  // number = runs margin, e.g. PHI2 = "PHI wins by over 1.5 runs"
+  if (upper.includes('MLBSPREAD') && !isNaN(num) && num > 0) {
+    const team = suffix.replace(/[0-9]/g, '');
+    return `${title} — ${team} by ${num - 0.5}+ runs`;
+  }
+
+  // NBA Total Points — suffix is the line, e.g. 220 = over 219.5
+  if (upper.includes('NBATOTAL') && !isNaN(num)) {
+    return `${title} — Over ${num - 0.5} pts`;
+  }
+
+  // NBA Spread — suffix like OKC6, SAS14
+  if (upper.includes('NBASPREAD') && !isNaN(num) && num > 0) {
+    const team = suffix.replace(/[0-9]/g, '');
+    return `${title} — ${team} by ${num - 0.5}+ pts`;
+  }
+
+  // NHL / NFL game winner — suffix is team abbreviation, already clear
+  // PGA / UFC — title is already descriptive enough
+
+  return title;
 }
 
 // ─── RSA-PSS Signing ──────────────────────────────────────────────────
@@ -114,9 +164,9 @@ async function fetchAllMarkets(keyId, pem) {
   let allMarkets = [];
 
   for (const series of SERIES) {
-    const params = new URLSearchParams({ 
-      limit: '200', 
-      status: 'open',
+    const params = new URLSearchParams({
+      limit:         '200',
+      status:        'open',
       series_ticker: series,
     });
     const path = `/trade-api/v2/markets?${params}`;
@@ -150,51 +200,33 @@ app.get('/api/markets', async (req, res) => {
   const pem = normalisePem(rawKey);
 
   try {
-    const allMarkets        = await fetchAllMarkets(keyId, pem);
-    const afterParlayFilter = allMarkets.filter(m => !isParlay(m));
-    const afterSportsFilter = afterParlayFilter.filter(m => isSportsMarket(m));
-    const afterPriceFilter  = afterSportsFilter.filter(m => hasBothPrices(m));
+    const allMarkets = await fetchAllMarkets(keyId, pem);
 
-    const result = afterPriceFilter.map(m => {
-      const { yes_bid, no_bid } = extractPrices(m);
-      return {
-        ticker:        m.ticker        ?? null,
-        title:         m.title         ?? null,
-        yes_bid,
-        no_bid,
-        volume:        Math.round(parseFloat(m.volume_fp        ?? m.volume        ?? 0)),
-        open_interest: Math.round(parseFloat(m.open_interest_fp ?? m.open_interest ?? 0)),
-        close_time:    m.close_time    ?? null,
-        status:        m.status        ?? null,
-        series_ticker: m.series_ticker ?? null,
-        event_ticker:  m.event_ticker  ?? null,
-        category:      m.category      ?? null,
-      };
-    });
+    const result = allMarkets
+      .filter(m => isSportsMarket(m))   // sports only
+      .filter(m => hasBothPrices(m))    // must have both sides priced
+      .filter(m => isTwoSided(m))       // must be a live two-sided market
+      .map(m => {
+        const { yes_bid, no_bid } = extractPrices(m);
+        return {
+          ticker:        m.ticker        ?? null,
+          title:         enrichTitle(m),  // enriched with line info
+          yes_bid,
+          no_bid,
+          volume:        Math.round(parseFloat(m.volume_fp        ?? m.volume        ?? 0)),
+          open_interest: Math.round(parseFloat(m.open_interest_fp ?? m.open_interest ?? 0)),
+          close_time:    m.close_time    ?? null,
+          status:        m.status        ?? null,
+          series_ticker: m.series_ticker ?? null,
+          event_ticker:  m.event_ticker  ?? null,
+          category:      m.category      ?? null,
+        };
+      });
 
     res.json({
       count:         result.length,
       total_fetched: allMarkets.length,
-      debug_counts: {
-        total:             allMarkets.length,
-        after_no_parlay:   afterParlayFilter.length,
-        after_sports:      afterSportsFilter.length,
-        after_prices:      afterPriceFilter.length,
-        non_parlay_sample: afterParlayFilter.slice(0, 3).map(m => ({
-          ticker:          m.ticker,
-          title:           m.title,
-          event_ticker:    m.event_ticker,
-          yes_bid_dollars: m.yes_bid_dollars,
-          no_bid_dollars:  m.no_bid_dollars,
-        })),
-        sports_sample: afterSportsFilter.slice(0, 3).map(m => ({
-          ticker:          m.ticker,
-          title:           m.title,
-          yes_bid_dollars: m.yes_bid_dollars,
-          no_bid_dollars:  m.no_bid_dollars,
-        })),
-      },
-      markets: result,
+      markets:       result,
     });
 
   } catch (err) {
