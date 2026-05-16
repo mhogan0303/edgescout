@@ -15,11 +15,18 @@ const PORT = process.env.PORT || 3000;
 const BASE_URL = 'https://api.elections.kalshi.com';
 
 // ─── Parlay exclusion ─────────────────────────────────────────────────
+// Only exclude markets that genuinely have multiple legs.
+// Do NOT exclude based on ticker prefix alone — Kalshi uses KXMVE
+// as a prefix on single-leg markets too.
 function isParlay(market) {
-  const ticker = (market.ticker ?? '').toUpperCase();
-  if (ticker.startsWith('KXMVE')) return true;
-  if (market.mve_collection_ticker) return true;
+  // Has more than one leg = definitely a parlay
   if (Array.isArray(market.mve_selected_legs) && market.mve_selected_legs.length > 1) return true;
+  // Has a collection ticker AND multiple legs in the title (comma-separated "yes X, yes Y")
+  if (market.mve_collection_ticker) {
+    const title = market.title ?? '';
+    const yesCount = (title.match(/\byes\b/gi) ?? []).length;
+    if (yesCount > 1) return true;
+  }
   return false;
 }
 
@@ -144,7 +151,6 @@ app.get('/api/markets', async (req, res) => {
   try {
     const allMarkets = await fetchAllMarkets(keyId, pem);
 
-    // Apply filters one at a time and track counts at each stage
     const afterParlayFilter = allMarkets.filter(m => !isParlay(m));
     const afterSportsFilter = afterParlayFilter.filter(m => isSportsMarket(m));
     const afterPriceFilter  = afterSportsFilter.filter(m => hasBothPrices(m));
@@ -169,14 +175,12 @@ app.get('/api/markets', async (req, res) => {
     res.json({
       count:         result.length,
       total_fetched: allMarkets.length,
-      // Shows exactly where markets are being dropped
       debug_counts: {
-        total:            allMarkets.length,
-        after_no_parlay:  afterParlayFilter.length,
-        after_sports:     afterSportsFilter.length,
-        after_prices:     afterPriceFilter.length,
-        // Sample of sports markets that have NO prices — helps diagnose timing
-        unpriced_sample:  afterSportsFilter
+        total:           allMarkets.length,
+        after_no_parlay: afterParlayFilter.length,
+        after_sports:    afterSportsFilter.length,
+        after_prices:    afterPriceFilter.length,
+        unpriced_sample: afterSportsFilter
           .filter(m => !hasBothPrices(m))
           .slice(0, 3)
           .map(m => ({
