@@ -474,6 +474,7 @@
     .price-cell-val.best-no  { color: var(--accent); }
 
     .stats-mini { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 10px 0; }
+    @media (min-width: 480px) { .stats-mini { grid-template-columns: repeat(6, 1fr); } }
     .stat-mini { background: var(--surface2); border-radius: 4px; padding: 6px 8px; }
     .stat-mini-label { font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.1em; color: var(--text-faint); text-transform: uppercase; margin-bottom: 2px; }
     .stat-mini-val { font-family: var(--mono); font-size: 0.78rem; color: var(--text-dim); }
@@ -859,26 +860,46 @@ function buildCard(m) {
   var card = document.createElement('div');
   card.className = 'market-card tier-' + m.tier;
 
-  var yb       = (m.yes_bid != null) ? m.yes_bid : '\u2014';
-  var nb       = (m.no_bid  != null) ? m.no_bid  : '\u2014';
-  var fairPct  = (m.fairValue  != null) ? (m.fairValue  * 100).toFixed(1) + '%' : '\u2014';
-  var vigTxt   = (m.vigPct     != null) ? m.vigPct.toFixed(1) + '%'             : '\u2014';
-  var edgeTxt  = (m.edgeScore  != null) ? m.edgeScore.toFixed(1)                : '0.0';
-  var betTxt   = (m.recommendedBet > 0) ? '$' + m.recommendedBet.toFixed(2)     : '$0.00';
-  var volTxt   = (m.volume        != null) ? fmtNum(m.volume)        : '\u2014';
-  var oiTxt    = (m.open_interest != null) ? fmtNum(m.open_interest) : '\u2014';
-  var closeStr = formatCloseTime(m.close_time);
-  var bsy      = m.bestSide === 'YES';
+  var yb           = (m.yes_bid       != null) ? m.yes_bid                              : '\u2014';
+  var nb           = (m.no_bid        != null) ? m.no_bid                               : '\u2014';
+  var fairPct      = (m.fairValue     != null) ? (m.fairValue * 100).toFixed(1) + '%'   : '\u2014';
+  var vigTxt       = (m.vigPct        != null) ? m.vigPct.toFixed(1) + '%'              : '\u2014';
+  var edgeTxt      = (m.edgeScore     != null) ? m.edgeScore.toFixed(1)                 : '0.0';
+  var rawEdgeTxt   = (m.rawEdgeScore  != null) ? m.rawEdgeScore.toFixed(1)              : '0.0';
+  var confPct      = (m.confidence    != null) ? Math.round(m.confidence * 100) + '%'   : '\u2014';
+  var baselineTxt  = (m.baseline      != null) ? (m.baseline * 100).toFixed(0) + '%'    : '\u2014';
+  var betTxt       = (m.recommendedBet > 0)    ? '$' + m.recommendedBet.toFixed(2)      : '$0.00';
+  var volTxt       = (m.volume        != null) ? fmtNum(m.volume)                       : '\u2014';
+  var oiTxt        = (m.open_interest != null) ? fmtNum(m.open_interest)                : '\u2014';
+  var closeStr     = formatCloseTime(m.close_time);
+  var bsy          = m.bestSide === 'YES';
+  var marketType   = (m.marketType || 'UNKNOWN').replace('_', ' ');
 
   var sideHtml = '';
   if (m.bestSide) {
     sideHtml = '<div class="best-side-badge side-' + m.bestSide + '">BET ' + m.bestSide + '</div>';
   }
 
+  // Kelly cap warning
+  var kellyHtml = '<div class="kelly-row" style="margin-top:6px;">Kelly bet: <span class="kelly-amount">' + betTxt + '</span>';
+  if (m.wasCapped) {
+    kellyHtml += ' <span style="color:var(--yellow);font-size:0.6rem;">(capped at ' + Math.round(EdgeModel.MAX_KELLY_PCT * 100) + '%)</span>';
+  }
+  kellyHtml += '</div>';
+
+  // Low confidence warning
+  var confWarning = '';
+  if (m.confidence != null && m.confidence < 0.6) {
+    confWarning = '<div style="font-family:var(--mono);font-size:0.6rem;color:var(--yellow);margin-top:4px;">&#9888; Low volume \u2014 discounted score</div>';
+  }
+
   card.innerHTML =
     '<div class="card-head">' +
       '<div class="card-title">' + escHtml(m.title || m.ticker || 'Unnamed Market') + '</div>' +
-      '<span class="sport-tag">' + escHtml(m.sport || '?') + '</span>' +
+      '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">' +
+        '<span class="sport-tag">' + escHtml(m.sport || '?') + '</span>' +
+        '<span class="sport-tag" style="color:var(--text-faint);">' + escHtml(marketType) + '</span>' +
+      '</div>' +
     '</div>' +
 
     '<div class="prices-row">' +
@@ -895,24 +916,27 @@ function buildCard(m) {
     '<div class="stats-mini">' +
       '<div class="stat-mini"><div class="stat-mini-label">Vig</div><div class="stat-mini-val">' + vigTxt + '</div></div>' +
       '<div class="stat-mini"><div class="stat-mini-label">Fair Val</div><div class="stat-mini-val">' + fairPct + '</div></div>' +
-      '<div class="stat-mini"><div class="stat-mini-label">Liq</div><div class="stat-mini-val">' + (m.volScore != null ? (m.volScore * 100).toFixed(0) + '%' : '\u2014') + '</div></div>' +
+      '<div class="stat-mini"><div class="stat-mini-label">Baseline</div><div class="stat-mini-val">' + baselineTxt + '</div></div>' +
+      '<div class="stat-mini"><div class="stat-mini-label">Raw Edge</div><div class="stat-mini-val">' + rawEdgeTxt + 'pp</div></div>' +
+      '<div class="stat-mini"><div class="stat-mini-label">Confidence</div><div class="stat-mini-val">' + confPct + '</div></div>' +
+      '<div class="stat-mini"><div class="stat-mini-label">Vol+OI</div><div class="stat-mini-val">' + volTxt + '+' + oiTxt + '</div></div>' +
     '</div>' +
 
     '<div class="edge-block">' +
       '<div>' +
         '<div class="edge-score-big tier-' + m.tier + '">' + edgeTxt + '</div>' +
-        '<div class="edge-score-unit">pp edge</div>' +
+        '<div class="edge-score-unit">pp edge (adj)</div>' +
       '</div>' +
       '<div class="edge-info">' +
         '<div class="edge-tier tier-' + m.tier + '">' + m.tier + ' EDGE</div>' +
         sideHtml +
-        '<div class="kelly-row" style="margin-top:6px;">Kelly bet: <span class="kelly-amount">' + betTxt + '</span></div>' +
+        kellyHtml +
+        confWarning +
       '</div>' +
     '</div>' +
 
     '<div class="card-foot">' +
-      '<div class="card-foot-item">Vol <span>' + volTxt + '</span></div>' +
-      '<div class="card-foot-item">OI <span>' + oiTxt + '</span></div>' +
+      '<div class="card-foot-item">Ticker <span style="font-size:0.55rem;">' + escHtml(m.ticker || '\u2014') + '</span></div>' +
       '<div class="' + closeStr.cls + '">' + closeStr.txt + '</div>' +
     '</div>';
 
