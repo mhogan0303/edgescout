@@ -916,7 +916,7 @@ function buildCard(m) {
     '<div class="stats-mini">' +
       '<div class="stat-mini"><div class="stat-mini-label">Vig</div><div class="stat-mini-val">' + vigTxt + '</div></div>' +
       '<div class="stat-mini"><div class="stat-mini-label">Fair Val</div><div class="stat-mini-val">' + fairPct + '</div></div>' +
-      '<div class="stat-mini"><div class="stat-mini-label">Baseline</div><div class="stat-mini-val">' + baselineTxt + '</div></div>' +
+      '<div class="stat-mini"><div class="stat-mini-label">' + (m.has_vegas ? 'Vegas Line' : 'Baseline') + '</div><div class="stat-mini-val" style="' + (m.has_vegas ? 'color:var(--accent)' : '') + '">' + baselineTxt + '</div></div>' +
       '<div class="stat-mini"><div class="stat-mini-label">Raw Edge</div><div class="stat-mini-val">' + rawEdgeTxt + 'pp</div></div>' +
       '<div class="stat-mini"><div class="stat-mini-label">Confidence</div><div class="stat-mini-val">' + confPct + '</div></div>' +
       '<div class="stat-mini"><div class="stat-mini-label">Vol+OI</div><div class="stat-mini-val">' + volTxt + '+' + oiTxt + '</div></div>' +
