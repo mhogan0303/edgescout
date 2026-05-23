@@ -261,20 +261,51 @@ const EdgeModel = (() => {
 
     const volScore   = volumeScore(volume, open_interest);
     const confidence = confidenceWeight(volume, open_interest);
+    const { adjYes, adjNo, vigPct } = removeVig(yb, nb);
 
-    // Use Vegas implied probability as baseline if available.
-    // This replaces the flat sport baseline with a real sharp-market benchmark.
-    // If Vegas data isn't available, fall back to the sport/type baseline.
-    const baseline = (has_vegas && vegas_prob !== null)
-      ? vegas_prob
-      : getBaseline(marketType, sport);
+    let fairValue, edgeYes, edgeNo, bestEdge, bestSide, rawEdgeScore, baseline;
 
-    const { adjYes, adjNo, vigPct }                          = removeVig(yb, nb);
-    const fairValue                                           = consensusFairValue(adjYes, baseline, volScore);
-    const { edgeYes, edgeNo, bestEdge, bestSide, edgeScore: rawEdgeScore } = scoreEdge(fairValue, adjYes, adjNo);
+    if (has_vegas && vegas_prob !== null) {
+      // ── Vegas mode ──────────────────────────────────────────────────
+      // When we have a real Vegas implied probability, use it directly
+      // as the fair value. No blending needed — Vegas IS the benchmark.
+      //
+      // Edge = Vegas fair prob minus Kalshi vig-free prob, per side:
+      //   edgeYes = vegas_prob - adjYes  (positive = YES is underpriced on Kalshi)
+      //   edgeNo  = (1 - vegas_prob) - adjNo  (positive = NO is underpriced)
+      //
+      // Example: Vegas PHI = 70%, Kalshi PHI = 61¢
+      //   adjYes ≈ 0.619 (after vig removal)
+      //   edgeYes = 0.70 - 0.619 = +0.081 → BET YES on PHI
+      baseline     = vegas_prob;
+      fairValue    = vegas_prob;
+      edgeYes      = vegas_prob - adjYes;
+      edgeNo       = (1 - vegas_prob) - adjNo;
+      bestEdge     = Math.max(edgeYes, edgeNo);
+      bestSide     = edgeYes >= edgeNo ? 'YES' : 'NO';
+      rawEdgeScore = bestEdge * 100;
+    } else {
+      // ── Baseline mode ───────────────────────────────────────────────
+      // No Vegas data — use sport/type historical baseline blended
+      // with the market price weighted by volume trust.
+      baseline     = getBaseline(marketType, sport);
+      fairValue    = consensusFairValue(adjYes, baseline, volScore);
+      const scored = scoreEdge(fairValue, adjYes, adjNo);
+      edgeYes      = scored.edgeYes;
+      edgeNo       = scored.edgeNo;
+      bestEdge     = scored.bestEdge;
+      bestSide     = scored.bestSide;
+      rawEdgeScore = scored.edgeScore;
+    }
 
-    // Apply confidence discount to raw edge score
-    const edgeScore = rawEdgeScore * confidence;
+    // Apply confidence discount — Vegas markets get less discount
+    // because the benchmark is already sharp. Baseline markets keep
+    // the full discount since the model is less reliable.
+    const confidenceMult = has_vegas
+      ? Math.min(1, 0.70 + (0.30 * volScore))   // floor at 70% for Vegas
+      : confidence;                               // standard for baseline
+
+    const edgeScore = rawEdgeScore * confidenceMult;
 
     const bestPrice = bestSide === 'YES' ? yb : nb;
     const { recommendedBet, halfKelly, quarterKelly, wasCapped, capAmount } = kellySize(
