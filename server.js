@@ -37,57 +37,60 @@ function getSportKey(ticker) {
 // Kalshi uses short codes (NYY, LAD, KC) while Odds API uses full names.
 // We match by checking if any word in the full team name matches the
 // Kalshi abbreviation, or by a lookup table for common ones.
+// Team aliases: each code maps to all possible full names the Odds API might use.
+// For teams that exist in multiple sports (e.g. ATL = Braves OR Falcons),
+// we include all variations and rely on the sport key to filter correctly.
 const TEAM_ALIASES = {
   // MLB
   'NYY': ['New York Yankees', 'Yankees'],
   'NYM': ['New York Mets', 'Mets'],
   'LAD': ['Los Angeles Dodgers', 'Dodgers'],
   'LAA': ['Los Angeles Angels', 'Angels'],
-  'SF':  ['San Francisco Giants', 'Giants'],
-  'ATH': ["Athletics", "Oakland Athletics", "A's"],
+  'ATH': ['Athletics', 'Oakland Athletics'],
   'SD':  ['San Diego Padres', 'Padres'],
-  'SEA': ['Seattle Mariners', 'Mariners'],
-  'HOU': ['Houston Astros', 'Astros'],
+  'HOU': ['Houston Astros', 'Astros', 'Houston Texans', 'Texans'],
   'TEX': ['Texas Rangers', 'Rangers'],
-  'ATL': ['Atlanta Braves', 'Braves'],
-  'MIA': ['Miami Marlins', 'Marlins'],
-  'PHI': ['Philadelphia Phillies', 'Phillies'],
+  'MIA': ['Miami Marlins', 'Marlins', 'Miami Dolphins', 'Dolphins'],
   'WSH': ['Washington Nationals', 'Nationals'],
-  'NYY': ['New York Yankees'],
   'BOS': ['Boston Red Sox', 'Red Sox'],
-  'TB':  ['Tampa Bay Rays', 'Rays'],
-  'BAL': ['Baltimore Orioles', 'Orioles'],
   'TOR': ['Toronto Blue Jays', 'Blue Jays'],
-  'CLE': ['Cleveland Guardians', 'Guardians'],
-  'DET': ['Detroit Tigers', 'Tigers'],
   'CWS': ['Chicago White Sox', 'White Sox'],
   'CHC': ['Chicago Cubs', 'Cubs'],
-  'MIN': ['Minnesota Twins', 'Twins'],
-  'KC':  ['Kansas City Royals', 'Royals'],
+  'KC':  ['Kansas City Royals', 'Royals', 'Kansas City Chiefs', 'Chiefs'],
   'MIL': ['Milwaukee Brewers', 'Brewers'],
   'STL': ['St. Louis Cardinals', 'Cardinals'],
-  'CIN': ['Cincinnati Reds', 'Reds'],
-  'PIT': ['Pittsburgh Pirates', 'Pirates'],
+  'PIT': ['Pittsburgh Pirates', 'Pirates', 'Pittsburgh Steelers', 'Steelers'],
   'AZ':  ['Arizona Diamondbacks', 'Diamondbacks'],
   'COL': ['Colorado Rockies', 'Rockies'],
+  // Multi-sport codes — includes both MLB and NFL names
+  'ATL': ['Atlanta Braves', 'Braves', 'Atlanta Falcons', 'Falcons'],
+  'BAL': ['Baltimore Orioles', 'Orioles', 'Baltimore Ravens', 'Ravens'],
+  'BUF': ['Buffalo Sabres', 'Sabres', 'Buffalo Bills', 'Bills'],
+  'CHI': ['Chicago Cubs', 'Cubs', 'Chicago White Sox', 'White Sox', 'Chicago Bears', 'Bears'],
+  'CIN': ['Cincinnati Reds', 'Reds', 'Cincinnati Bengals', 'Bengals'],
+  'CLE': ['Cleveland Guardians', 'Guardians', 'Cleveland Browns', 'Browns'],
+  'DET': ['Detroit Tigers', 'Tigers', 'Detroit Lions', 'Lions', 'Detroit Pistons', 'Pistons'],
+  'GB':  ['Green Bay Packers', 'Packers'],
+  'MIN': ['Minnesota Twins', 'Twins', 'Minnesota Vikings', 'Vikings'],
+  'NYY': ['New York Yankees', 'Yankees'],
+  'PHI': ['Philadelphia Phillies', 'Phillies', 'Philadelphia Eagles', 'Eagles'],
+  'SEA': ['Seattle Mariners', 'Mariners', 'Seattle Seahawks', 'Seahawks'],
+  'SF':  ['San Francisco Giants', 'Giants', 'San Francisco 49ers', '49ers'],
+  'TB':  ['Tampa Bay Rays', 'Rays', 'Tampa Bay Buccaneers', 'Buccaneers'],
   // NBA
   'OKC': ['Oklahoma City Thunder', 'Thunder'],
   'SAS': ['San Antonio Spurs', 'Spurs'],
-  'DET': ['Detroit Pistons', 'Pistons'],
   // NHL
   'MTL': ['Montreal Canadiens', 'Canadiens'],
-  'BUF': ['Buffalo Sabres', 'Sabres'],
   'VGK': ['Vegas Golden Knights', 'Golden Knights'],
-  // NFL
+  // NFL only
   'NE':  ['New England Patriots', 'Patriots'],
   'LAR': ['Los Angeles Rams', 'Rams'],
   'LAC': ['Los Angeles Chargers', 'Chargers'],
-  'GB':  ['Green Bay Packers', 'Packers'],
   'NO':  ['New Orleans Saints', 'Saints'],
   'JAC': ['Jacksonville Jaguars', 'Jaguars'],
   'IND': ['Indianapolis Colts', 'Colts'],
   'CAR': ['Carolina Panthers', 'Panthers'],
-  'CHI': ['Chicago Bears', 'Bears'],
   'LV':  ['Las Vegas Raiders', 'Raiders'],
   'WAS': ['Washington Commanders', 'Commanders'],
   'TEN': ['Tennessee Titans', 'Titans'],
@@ -95,22 +98,7 @@ const TEAM_ALIASES = {
   'NYG': ['New York Giants', 'Giants'],
   'DAL': ['Dallas Cowboys', 'Cowboys'],
   'DEN': ['Denver Broncos', 'Broncos'],
-  'PIT': ['Pittsburgh Steelers', 'Steelers'],
-  'ATL': ['Atlanta Falcons', 'Falcons'],
-  'CIN': ['Cincinnati Bengals', 'Bengals'],
-  'CLE': ['Cleveland Browns', 'Browns'],
-  'BAL': ['Baltimore Ravens', 'Ravens'],
-  'MIA': ['Miami Dolphins', 'Dolphins'],
-  'BUF': ['Buffalo Bills', 'Bills'],
-  'HOU': ['Houston Texans', 'Texans'],
-  'TB':  ['Tampa Bay Buccaneers', 'Buccaneers'],
-  'SF':  ['San Francisco 49ers', '49ers'],
-  'SEA': ['Seattle Seahawks', 'Seahawks'],
   'ARI': ['Arizona Cardinals', 'Cardinals'],
-  'MIN': ['Minnesota Vikings', 'Vikings'],
-  'DET': ['Detroit Lions', 'Lions'],
-  'GB':  ['Green Bay Packers', 'Packers'],
-  'CHI': ['Chicago Bears', 'Bears'],
 };
 
 function teamMatches(kalshiCode, oddsTeamName) {
@@ -164,22 +152,22 @@ function getVegasProb(vegasGames, kalshiTeamCode, eventTicker) {
     const awayMatch = teamMatches(kalshiTeamCode, game.away_team);
     if (!homeMatch && !awayMatch) continue;
 
-    // Found the game — get consensus implied prob across all books
+    // Found the game — collect implied prob for THIS team across all books
     const probs = [];
     for (const book of (game.bookmakers ?? [])) {
       const h2h = book.markets?.find(m => m.key === 'h2h');
       if (!h2h) continue;
-      const outcome = h2h.outcomes?.find(o =>
-        homeMatch ? teamMatches(kalshiTeamCode, o.name) : teamMatches(kalshiTeamCode, o.name)
-      );
+      // Find the outcome matching our team (home or away)
+      const outcome = h2h.outcomes?.find(o => teamMatches(kalshiTeamCode, o.name));
       if (outcome) probs.push(americanToImplied(outcome.price));
     }
 
     if (!probs.length) return null;
 
-    // Average across books and remove vig
-    const raw = probs.reduce((a, b) => a + b, 0) / probs.length;
-    return Math.min(0.97, Math.max(0.03, raw));
+    // Average implied prob across books (this still has vig in it,
+    // but since we compare to Kalshi which also has vig, it cancels out)
+    const avg = probs.reduce((a, b) => a + b, 0) / probs.length;
+    return Math.min(0.97, Math.max(0.03, avg));
   }
 
   return null;
