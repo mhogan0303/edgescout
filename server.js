@@ -201,11 +201,15 @@ function dollarsToCents(val) {
 }
 
 function extractPrices(market) {
-  const yesBid = dollarsToCents(market.yes_bid_dollars)
-              ?? dollarsToCents(market.yes_ask_dollars);
-  const noBid  = dollarsToCents(market.no_bid_dollars)
-              ?? dollarsToCents(market.no_ask_dollars);
-  return { yes_bid: yesBid, no_bid: noBid };
+  // Use ASK prices — this is what you actually pay to enter a position.
+  // Bid = what buyers offer (you can't buy at this price).
+  // Ask = what sellers want (the real cost to buy YES or NO).
+  // Fall back to bid if ask is unavailable.
+  const yesAsk = dollarsToCents(market.yes_ask_dollars)
+              ?? dollarsToCents(market.yes_bid_dollars);
+  const noAsk  = dollarsToCents(market.no_ask_dollars)
+              ?? dollarsToCents(market.no_bid_dollars);
+  return { yes_bid: yesAsk, no_bid: noAsk };
 }
 
 function hasBothPrices(market) {
@@ -377,11 +381,17 @@ app.get('/api/markets', async (req, res) => {
         vegasProb = getVegasProb(vegasGames, teamCode, m.event_ticker);
       }
 
+      // yes_bid/no_bid from extractPrices are ASK prices (what you pay to buy)
+      const yesBidRaw = dollarsToCents(m.yes_bid_dollars);
+      const noBidRaw  = dollarsToCents(m.no_bid_dollars);
+
       return {
         ticker:        m.ticker        ?? null,
         title:         enrichTitle(m),
-        yes_bid,
-        no_bid,
+        yes_bid,           // yes_ask — the price you actually pay to buy YES
+        no_bid,            // no_ask — the price you actually pay to buy NO
+        yes_bid_raw:   yesBidRaw,  // standing buy order for reference
+        no_bid_raw:    noBidRaw,
         volume:        Math.round(parseFloat(m.volume_fp        ?? m.volume        ?? 0)),
         open_interest: Math.round(parseFloat(m.open_interest_fp ?? m.open_interest ?? 0)),
         close_time:    m.close_time    ?? null,
@@ -389,7 +399,7 @@ app.get('/api/markets', async (req, res) => {
         series_ticker: m.series_ticker ?? null,
         event_ticker:  m.event_ticker  ?? null,
         category:      m.category      ?? null,
-        vegas_prob:    vegasProb,        // null if no match found
+        vegas_prob:    vegasProb,
         has_vegas:     vegasProb !== null,
       };
     });
