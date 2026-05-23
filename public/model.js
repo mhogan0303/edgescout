@@ -226,6 +226,8 @@ const EdgeModel = (() => {
       no_bid,
       volume        = 0,
       open_interest = 0,
+      vegas_prob    = null,
+      has_vegas     = false,
     } = market;
 
     const yb = Number(yes_bid);
@@ -257,9 +259,15 @@ const EdgeModel = (() => {
       };
     }
 
-    const baseline   = getBaseline(marketType, sport);
     const volScore   = volumeScore(volume, open_interest);
     const confidence = confidenceWeight(volume, open_interest);
+
+    // Use Vegas implied probability as baseline if available.
+    // This replaces the flat sport baseline with a real sharp-market benchmark.
+    // If Vegas data isn't available, fall back to the sport/type baseline.
+    const baseline = (has_vegas && vegas_prob !== null)
+      ? vegas_prob
+      : getBaseline(marketType, sport);
 
     const { adjYes, adjNo, vigPct }                          = removeVig(yb, nb);
     const fairValue                                           = consensusFairValue(adjYes, baseline, volScore);
