@@ -1,380 +1,211 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>EdgeScout — Sports Market Edge Detection</title>
+  <title>EdgeScout</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <script src="/model.js"></script>
   <style>
-    /* ─── Variables ───────────────────────────────────────────── */
     :root {
-      --bg:          #0a0c0f;
-      --surface:     #111418;
-      --surface2:    #181c22;
-      --border:      #1e2530;
-      --border2:     #2a3040;
-      --accent:      #e8ff47;
-      --accent-dim:  #b8cc30;
-      --green:       #39ff8f;
-      --yellow:      #ffcc00;
-      --red:         #ff4757;
-      --muted:       #4a5568;
-      --text:        #e2e8f0;
-      --text-dim:    #8892a4;
-      --text-faint:  #4a5568;
-      --mono:        'DM Mono', monospace;
-      --sans:        'DM Sans', sans-serif;
-      --display:     'Bebas Neue', sans-serif;
+      --bg:       #0a0c0f;
+      --surface:  #111418;
+      --border:   #1e2530;
+      --accent:   #e8ff47;
+      --green:    #39ff8f;
+      --yellow:   #ffcc00;
+      --red:      #ff4757;
+      --text:     #e2e8f0;
+      --dim:      #8892a4;
+      --faint:    #4a5568;
+      --mono:     'DM Mono', monospace;
+      --sans:     'DM Sans', sans-serif;
+      --display:  'Bebas Neue', sans-serif;
     }
 
-    /* ─── Reset & Base ────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { font-size: 16px; scroll-behavior: smooth; }
+    html { font-size: 16px; }
     body {
       background: var(--bg);
       color: var(--text);
       font-family: var(--sans);
-      font-size: 0.875rem;
-      line-height: 1.5;
       min-height: 100vh;
-      overflow-x: hidden;
     }
 
-    /* Grid noise overlay */
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background-image:
-        linear-gradient(rgba(232,255,71,0.015) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(232,255,71,0.015) 1px, transparent 1px);
-      background-size: 40px 40px;
-      pointer-events: none;
-      z-index: 0;
-    }
-
-    /* ─── Layout ──────────────────────────────────────────────── */
     .app {
-      position: relative;
-      z-index: 1;
-      max-width: 1400px;
+      max-width: 900px;
       margin: 0 auto;
-      padding: 0 16px 80px;
+      padding: 24px 16px 80px;
     }
 
-    /* ─── Header ──────────────────────────────────────────────── */
+    /* ─── Header ─── */
     .header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 20px 0 16px;
+      padding-bottom: 20px;
       border-bottom: 1px solid var(--border);
+      margin-bottom: 24px;
       flex-wrap: wrap;
       gap: 12px;
     }
 
     .logo {
       font-family: var(--display);
-      font-size: clamp(2rem, 5vw, 3.2rem);
+      font-size: 2.4rem;
       letter-spacing: 0.04em;
       line-height: 1;
-      display: flex;
-      align-items: center;
-      gap: 2px;
     }
     .logo span:first-child { color: #fff; }
     .logo span:last-child  { color: var(--accent); }
 
-    .logo-tag {
-      font-family: var(--mono);
-      font-size: 0.6rem;
-      color: var(--accent-dim);
-      letter-spacing: 0.15em;
-      text-transform: uppercase;
-      margin-left: 10px;
-      padding: 2px 6px;
-      border: 1px solid var(--accent-dim);
-      border-radius: 2px;
-      align-self: center;
-    }
-
-    .header-stats {
+    .header-right {
       display: flex;
       align-items: center;
-      gap: 20px;
+      gap: 16px;
       flex-wrap: wrap;
     }
 
-    .stat-item { text-align: right; }
-    .stat-label {
-      font-family: var(--mono);
-      font-size: 0.6rem;
-      color: var(--text-faint);
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-    }
-    .stat-value {
-      font-family: var(--mono);
-      font-size: 1.1rem;
-      color: var(--text);
-      font-weight: 500;
-    }
-    .stat-value.highlight { color: var(--accent); }
-
-    .live-indicator {
-      display: flex;
-      align-items: center;
-      gap: 7px;
+    .status-pill {
       font-family: var(--mono);
       font-size: 0.65rem;
-      letter-spacing: 0.15em;
-      color: var(--text-dim);
+      letter-spacing: 0.12em;
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 1px solid var(--faint);
+      color: var(--dim);
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
-    .live-dot {
-      width: 8px;
-      height: 8px;
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
       border-radius: 50%;
-      background: var(--muted);
-      transition: background 0.4s;
+      background: var(--faint);
     }
-    .live-dot.active {
+    .status-dot.live {
       background: var(--green);
-      box-shadow: 0 0 8px var(--green), 0 0 20px rgba(57,255,143,0.3);
+      box-shadow: 0 0 6px var(--green);
       animation: pulse 2s ease-in-out infinite;
     }
     @keyframes pulse {
-      0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--green), 0 0 20px rgba(57,255,143,0.3); }
-      50%       { opacity: 0.6; box-shadow: 0 0 4px var(--green); }
+      0%,100% { opacity:1; }
+      50%      { opacity:0.5; }
     }
 
-    /* ─── Settings Toggle (mobile) ────────────────────────────── */
-    .settings-toggle {
-      display: none;
-      width: 100%;
-      padding: 10px 16px;
-      margin-top: 12px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      color: var(--text-dim);
+    .last-scan {
       font-family: var(--mono);
-      font-size: 0.7rem;
-      letter-spacing: 0.1em;
-      cursor: pointer;
-      text-align: left;
-      text-transform: uppercase;
-    }
-    @media (max-width: 768px) {
-      .settings-toggle { display: flex; align-items: center; justify-content: space-between; }
+      font-size: 0.65rem;
+      color: var(--faint);
     }
 
-    /* ─── Settings Bar ────────────────────────────────────────── */
-    .settings-bar {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 18px 20px;
-      margin: 14px 0;
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 18px 24px;
-      align-items: start;
-    }
-    @media (max-width: 768px) {
-      .settings-bar { display: none; }
-      .settings-bar.open { display: grid; grid-template-columns: 1fr; }
-    }
-
-    .setting-group label {
-      display: block;
-      font-family: var(--mono);
-      font-size: 0.6rem;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: var(--text-faint);
-      margin-bottom: 7px;
-    }
-    .setting-group input[type="number"],
-    .setting-group select {
-      width: 100%;
-      background: var(--surface2);
-      border: 1px solid var(--border2);
-      border-radius: 4px;
-      color: var(--text);
-      font-family: var(--mono);
-      font-size: 0.85rem;
-      padding: 7px 10px;
-      outline: none;
-      transition: border-color 0.2s;
-    }
-    .setting-group input[type="number"]:focus,
-    .setting-group select:focus { border-color: var(--accent); }
-
-    .slider-row { display: flex; align-items: center; gap: 10px; }
-    input[type="range"] {
-      -webkit-appearance: none;
-      flex: 1;
-      height: 4px;
-      border-radius: 2px;
-      background: var(--border2);
-      outline: none;
-      cursor: pointer;
-    }
-    input[type="range"]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: var(--accent);
-      border: 2px solid var(--bg);
-      cursor: pointer;
-      transition: transform 0.15s;
-    }
-    input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
-    .slider-val {
-      font-family: var(--mono);
-      font-size: 0.78rem;
-      color: var(--accent);
-      min-width: 36px;
-      text-align: right;
-    }
-
-    /* Sport checkboxes */
-    .checkbox-grid { display: flex; flex-wrap: wrap; gap: 6px; }
-    .sport-cb { display: none; }
-    .sport-label {
-      font-family: var(--mono);
-      font-size: 0.62rem;
-      letter-spacing: 0.08em;
-      padding: 4px 9px;
-      border: 1px solid var(--border2);
-      border-radius: 3px;
-      cursor: pointer;
-      color: var(--text-dim);
-      transition: all 0.15s;
-      user-select: none;
-    }
-    .sport-cb:checked + .sport-label {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #0a0c0f;
-      font-weight: 500;
-    }
-
-    /* Auto-refresh toggle */
-    .refresh-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-    .toggle-switch { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
-    .toggle-switch input { display: none; }
-    .toggle-track {
-      position: absolute;
-      inset: 0;
-      background: var(--border2);
-      border-radius: 10px;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-    .toggle-track::after {
-      content: '';
-      position: absolute;
-      left: 3px; top: 3px;
-      width: 14px; height: 14px;
-      border-radius: 50%;
-      background: var(--text-dim);
-      transition: left 0.2s, background 0.2s;
-    }
-    .toggle-switch input:checked + .toggle-track { background: var(--accent); }
-    .toggle-switch input:checked + .toggle-track::after { left: 19px; background: #0a0c0f; }
-    .refresh-label { font-family: var(--mono); font-size: 0.7rem; color: var(--text-dim); }
-    .refresh-select {
-      background: var(--surface2);
-      border: 1px solid var(--border2);
-      border-radius: 4px;
-      color: var(--text);
-      font-family: var(--mono);
-      font-size: 0.72rem;
-      padding: 4px 7px;
-      outline: none;
-    }
-
-    /* ─── Scan Controls ───────────────────────────────────────── */
-    .scan-bar {
+    /* ─── Controls ─── */
+    .controls {
       display: flex;
       align-items: center;
-      gap: 14px;
-      margin: 0 0 20px;
+      gap: 12px;
+      margin-bottom: 28px;
       flex-wrap: wrap;
     }
+
     .btn-scan {
       font-family: var(--display);
-      font-size: 1.1rem;
-      letter-spacing: 0.08em;
-      padding: 9px 28px;
+      font-size: 1rem;
+      letter-spacing: 0.06em;
+      padding: 10px 28px;
       background: var(--accent);
       color: #0a0c0f;
       border: none;
       border-radius: 5px;
       cursor: pointer;
       transition: all 0.15s;
+    }
+    .btn-scan:hover   { background: #f5ff70; }
+    .btn-scan:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .bankroll-wrap {
       display: flex;
       align-items: center;
       gap: 8px;
     }
-    .btn-scan:hover { background: #f5ff70; transform: translateY(-1px); }
-    .btn-scan:active { transform: translateY(0); }
-    .btn-scan:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-    .scan-status {
-      font-family: var(--mono);
-      font-size: 0.68rem;
-      color: var(--text-faint);
-      letter-spacing: 0.08em;
-    }
-
-    /* ─── Section Headers ─────────────────────────────────────── */
-    .section-header {
-      display: flex;
-      align-items: baseline;
-      gap: 12px;
-      margin: 0 0 14px;
-      padding-bottom: 10px;
-      border-bottom: 1px solid var(--border);
-    }
-    .section-title {
-      font-family: var(--display);
-      font-size: 1.6rem;
-      letter-spacing: 0.06em;
-      color: var(--text);
-    }
-    .section-count { font-family: var(--mono); font-size: 0.7rem; color: var(--text-faint); }
-    .section-toggle {
-      margin-left: auto;
+    .bankroll-wrap label {
       font-family: var(--mono);
       font-size: 0.65rem;
+      color: var(--faint);
       letter-spacing: 0.1em;
-      color: var(--text-dim);
-      background: none;
-      border: 1px solid var(--border2);
-      border-radius: 3px;
-      padding: 4px 10px;
-      cursor: pointer;
-      transition: all 0.15s;
       text-transform: uppercase;
     }
-    .section-toggle:hover { color: var(--accent); border-color: var(--accent); }
+    .bankroll-wrap input {
+      width: 90px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      padding: 6px 10px;
+      outline: none;
+    }
+    .bankroll-wrap input:focus { border-color: var(--accent); }
 
-    /* ─── Loading / Error / Empty States ─────────────────────── */
+    .min-gap-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .min-gap-wrap label {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--faint);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .min-gap-wrap select {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      padding: 6px 8px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    /* ─── Section heading ─── */
+    .section-head {
+      font-family: var(--display);
+      font-size: 1.3rem;
+      letter-spacing: 0.06em;
+      color: var(--dim);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+    }
+    .section-count {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--faint);
+    }
+
+    /* ─── Loading / Error ─── */
     .spinner-wrap {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 14px;
-      padding: 60px 0;
+      gap: 12px;
+      padding: 48px 0;
     }
     .spinner {
-      width: 36px; height: 36px;
-      border: 3px solid var(--border2);
+      width: 32px; height: 32px;
+      border: 3px solid var(--border);
       border-top-color: var(--accent);
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
@@ -382,640 +213,532 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     .spinner-label {
       font-family: var(--mono);
-      font-size: 0.68rem;
-      letter-spacing: 0.12em;
-      color: var(--text-faint);
-      text-transform: uppercase;
+      font-size: 0.65rem;
+      color: var(--faint);
+      letter-spacing: 0.1em;
     }
 
     .error-box {
       background: rgba(255,71,87,0.08);
-      border: 1px solid rgba(255,71,87,0.25);
+      border: 1px solid rgba(255,71,87,0.3);
       border-radius: 8px;
-      padding: 24px;
+      padding: 20px;
       text-align: center;
     }
-    .error-title { font-family: var(--display); font-size: 1.4rem; color: var(--red); margin-bottom: 8px; }
-    .error-msg { font-family: var(--mono); font-size: 0.75rem; color: var(--text-dim); margin-bottom: 16px; word-break: break-all; }
+    .error-box p { font-family: var(--mono); font-size: 0.75rem; color: var(--red); margin-bottom: 12px; }
     .btn-retry {
       font-family: var(--mono);
-      font-size: 0.72rem;
-      letter-spacing: 0.1em;
-      padding: 8px 20px;
+      font-size: 0.7rem;
+      padding: 7px 18px;
       background: transparent;
       border: 1px solid var(--red);
       border-radius: 4px;
       color: var(--red);
       cursor: pointer;
-      transition: all 0.15s;
-      text-transform: uppercase;
     }
-    .btn-retry:hover { background: rgba(255,71,87,0.12); }
 
-    .empty-state { padding: 48px 0; text-align: center; }
-    .empty-icon { font-size: 2.5rem; margin-bottom: 12px; opacity: 0.4; }
-    .empty-title { font-family: var(--display); font-size: 1.3rem; color: var(--text-dim); margin-bottom: 8px; }
-    .empty-sub { font-family: var(--mono); font-size: 0.7rem; color: var(--text-faint); max-width: 360px; margin: 0 auto; }
-
-    /* ─── Market Cards ────────────────────────────────────────── */
-    .markets-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-      gap: 12px;
+    /* ─── Edge Card ─── */
+    .edge-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
     }
-    @media (max-width: 600px) { .markets-grid { grid-template-columns: 1fr; } }
 
-    .market-card {
+    .edge-card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 8px;
-      padding: 16px;
-      transition: border-color 0.2s, transform 0.15s;
-      position: relative;
       overflow: hidden;
+      position: relative;
     }
-    .market-card::before {
+
+    .edge-card::before {
       content: '';
       position: absolute;
       top: 0; left: 0; right: 0;
-      height: 2px;
-      background: transparent;
-      transition: background 0.2s;
+      height: 3px;
     }
-    .market-card.tier-STRONG::before { background: var(--green); }
-    .market-card.tier-MILD::before   { background: var(--yellow); }
-    .market-card:hover { border-color: var(--border2); transform: translateY(-1px); }
+    .edge-card.strong::before { background: var(--green); }
+    .edge-card.mild::before   { background: var(--yellow); }
 
-    .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
-    .card-title { font-family: var(--sans); font-size: 0.82rem; font-weight: 500; color: var(--text); line-height: 1.4; flex: 1; }
-    .sport-tag {
-      font-family: var(--mono);
-      font-size: 0.58rem;
-      letter-spacing: 0.12em;
-      padding: 3px 7px;
-      border-radius: 3px;
-      background: var(--surface2);
-      border: 1px solid var(--border2);
-      color: var(--text-dim);
+    .card-inner {
+      display: flex;
+      align-items: center;
+      padding: 16px 20px;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    /* Signal block */
+    .signal {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-width: 80px;
+      padding: 10px 14px;
+      border-radius: 6px;
       flex-shrink: 0;
+    }
+    .signal.yes {
+      background: rgba(57,255,143,0.1);
+      border: 1px solid rgba(57,255,143,0.3);
+    }
+    .signal.no {
+      background: rgba(255,71,87,0.1);
+      border: 1px solid rgba(255,71,87,0.3);
+    }
+    .signal-action {
+      font-family: var(--display);
+      font-size: 1.1rem;
+      letter-spacing: 0.05em;
+      line-height: 1;
+      margin-bottom: 2px;
+    }
+    .signal.yes .signal-action { color: var(--green); }
+    .signal.no  .signal-action { color: var(--red); }
+    .signal-label {
+      font-family: var(--mono);
+      font-size: 0.55rem;
+      letter-spacing: 0.1em;
+      color: var(--faint);
       text-transform: uppercase;
     }
 
-    .prices-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
-    .price-cell {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 5px;
-      padding: 8px 10px;
+    /* Main info */
+    .card-info {
+      flex: 1;
+      min-width: 200px;
     }
-    .price-cell-label { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.1em; color: var(--text-faint); text-transform: uppercase; margin-bottom: 2px; }
-    .price-cell-val { font-family: var(--mono); font-size: 1.15rem; font-weight: 500; color: var(--text); }
-    .price-cell-val.best-yes { color: var(--green); }
-    .price-cell-val.best-no  { color: var(--accent); }
 
-    .stats-mini { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 10px 0; }
-    @media (min-width: 480px) { .stats-mini { grid-template-columns: repeat(6, 1fr); } }
-    .stat-mini { background: var(--surface2); border-radius: 4px; padding: 6px 8px; }
-    .stat-mini-label { font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.1em; color: var(--text-faint); text-transform: uppercase; margin-bottom: 2px; }
-    .stat-mini-val { font-family: var(--mono); font-size: 0.78rem; color: var(--text-dim); }
+    .card-title {
+      font-family: var(--sans);
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.3;
+      margin-bottom: 6px;
+    }
 
-    .edge-block {
+    .card-subtitle {
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      color: var(--dim);
+    }
+
+    .card-subtitle .highlight {
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    /* Price comparison */
+    .price-compare {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .price-row {
       display: flex;
       align-items: center;
-      gap: 14px;
-      background: var(--surface2);
-      border: 1px solid var(--border2);
-      border-radius: 6px;
-      padding: 12px 14px;
-      margin: 10px 0;
+      gap: 8px;
     }
-    .edge-score-big { font-family: var(--display); font-size: 2.8rem; line-height: 1; transition: color 0.3s; }
-    .edge-score-big.tier-STRONG { color: var(--green); }
-    .edge-score-big.tier-MILD   { color: var(--yellow); }
-    .edge-score-big.tier-NONE   { color: var(--muted); }
-    .edge-score-unit { font-family: var(--mono); font-size: 0.65rem; color: var(--text-faint); }
-    .edge-info { flex: 1; }
-    .edge-tier { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 4px; }
-    .edge-tier.tier-STRONG { color: var(--green); }
-    .edge-tier.tier-MILD   { color: var(--yellow); }
-    .edge-tier.tier-NONE   { color: var(--muted); }
 
-    .best-side-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
+    .price-label {
+      font-family: var(--mono);
+      font-size: 0.58rem;
+      letter-spacing: 0.08em;
+      color: var(--faint);
+      text-transform: uppercase;
+      width: 44px;
+      text-align: right;
+    }
+
+    .price-val {
+      font-family: var(--mono);
+      font-size: 1rem;
+      font-weight: 500;
+      min-width: 48px;
+      text-align: right;
+    }
+
+    .price-val.kalshi  { color: var(--text); }
+    .price-val.vegas   { color: var(--accent); }
+
+    .gap-badge {
       font-family: var(--mono);
       font-size: 0.7rem;
       font-weight: 500;
-      letter-spacing: 0.08em;
-      padding: 3px 9px;
-      border-radius: 4px;
+      padding: 2px 7px;
+      border-radius: 3px;
+      background: rgba(57,255,143,0.12);
+      color: var(--green);
+      margin-top: 2px;
+      text-align: right;
     }
-    .best-side-badge.side-YES { background: rgba(57,255,143,0.12); border: 1px solid rgba(57,255,143,0.3); color: var(--green); }
-    .best-side-badge.side-NO  { background: rgba(232,255,71,0.10); border: 1px solid rgba(232,255,71,0.25); color: var(--accent); }
-    .kelly-row { font-family: var(--mono); font-size: 0.75rem; color: var(--text-dim); margin-top: 5px; }
-    .kelly-amount { color: var(--text); font-weight: 500; }
 
-    .card-foot {
+    /* Kelly / bet suggestion */
+    .bet-suggest {
+      flex-shrink: 0;
+      text-align: center;
+      padding: 10px 16px;
+      background: rgba(232,255,71,0.06);
+      border: 1px solid rgba(232,255,71,0.15);
+      border-radius: 6px;
+      min-width: 90px;
+    }
+    .bet-amount {
+      font-family: var(--display);
+      font-size: 1.4rem;
+      color: var(--accent);
+      line-height: 1;
+      margin-bottom: 2px;
+    }
+    .bet-label {
+      font-family: var(--mono);
+      font-size: 0.55rem;
+      color: var(--faint);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    /* Card footer */
+    .card-footer {
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      margin-top: 10px;
-      padding-top: 10px;
+      justify-content: space-between;
+      padding: 8px 20px;
       border-top: 1px solid var(--border);
-      gap: 8px;
+      gap: 12px;
       flex-wrap: wrap;
     }
-    .card-foot-item { font-family: var(--mono); font-size: 0.62rem; color: var(--text-faint); }
-    .card-foot-item span { color: var(--text-dim); }
-    .close-time { font-family: var(--mono); font-size: 0.62rem; color: var(--text-faint); }
-    .close-time.urgent { color: var(--yellow); }
-    .close-time.past   { color: var(--muted); }
 
-    .all-markets-section { margin-top: 32px; }
-    .all-markets-body { display: none; }
-    .all-markets-body.open { display: block; }
+    .footer-item {
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      color: var(--faint);
+    }
+    .footer-item span { color: var(--dim); }
 
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: var(--bg); }
-    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 48px 0;
+    }
+    .empty-icon { font-size: 2rem; margin-bottom: 10px; opacity: 0.3; }
+    .empty-title {
+      font-family: var(--display);
+      font-size: 1.2rem;
+      color: var(--dim);
+      margin-bottom: 6px;
+    }
+    .empty-sub {
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      color: var(--faint);
+      max-width: 320px;
+      margin: 0 auto;
+    }
+
+    /* No vegas note */
+    .no-vegas-note {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--faint);
+      padding: 10px 16px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin-bottom: 16px;
+    }
+
+    @media (max-width: 600px) {
+      .card-inner { flex-direction: column; align-items: flex-start; }
+      .price-compare { align-items: flex-start; }
+      .bet-suggest { width: 100%; }
+    }
   </style>
 </head>
 <body>
 <div class="app">
 
-  <!-- ─── Header ──────────────────────────────────────────── -->
+  <!-- Header -->
   <header class="header">
-    <div style="display:flex;align-items:center;gap:8px;">
-      <div class="logo">
-        <span>EDGE</span><span>SCOUT</span>
+    <div class="logo"><span>EDGE</span><span>SCOUT</span></div>
+    <div class="header-right">
+      <div class="status-pill">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="statusLabel">IDLE</span>
       </div>
-      <span class="logo-tag">BETA</span>
-    </div>
-    <div class="header-stats">
-      <div class="live-indicator">
-        <div class="live-dot" id="liveDot"></div>
-        <span id="liveLabel">IDLE</span>
-      </div>
-      <div class="stat-item">
-        <div class="stat-label">Last Scan</div>
-        <div class="stat-value" id="lastScanTime">—</div>
-      </div>
-      <div class="stat-item">
-        <div class="stat-label">Markets</div>
-        <div class="stat-value" id="totalMarkets">—</div>
-      </div>
-      <div class="stat-item">
-        <div class="stat-label">Flagged</div>
-        <div class="stat-value highlight" id="flaggedCount">—</div>
-      </div>
+      <div class="last-scan" id="lastScan"></div>
     </div>
   </header>
 
-  <!-- ─── Settings Toggle (mobile) ────────────────────────── -->
-  <button class="settings-toggle" onclick="toggleSettings()">
-    <span>&#9881; Settings</span>
-    <span id="settingsArrow">&#9660;</span>
-  </button>
+  <!-- Controls -->
+  <div class="controls">
+    <button class="btn-scan" id="scanBtn" onclick="triggerScan()">&#9889; SCAN NOW</button>
 
-  <!-- ─── Settings Bar ─────────────────────────────────────── -->
-  <div class="settings-bar" id="settingsBar">
-
-    <div class="setting-group">
-      <label>Bankroll ($)</label>
-      <input type="number" id="bankroll" value="500" min="10" max="1000000" step="10" />
+    <div class="bankroll-wrap">
+      <label>Bankroll</label>
+      <input type="number" id="bankroll" value="500" min="10" step="10" />
     </div>
 
-    <div class="setting-group">
-      <label>Kelly Fraction &mdash; <span id="kellyLabel">25%</span></label>
-      <div class="slider-row">
-        <input type="range" id="kellySlider" min="10" max="100" value="25" step="5" />
-        <span class="slider-val" id="kellyVal">25%</span>
-      </div>
+    <div class="min-gap-wrap">
+      <label>Min edge</label>
+      <select id="minGap">
+        <option value="2">2¢</option>
+        <option value="3">3¢</option>
+        <option value="4">4¢</option>
+        <option value="5" selected>5¢</option>
+        <option value="7">7¢</option>
+        <option value="10">10¢</option>
+      </select>
     </div>
-
-    <div class="setting-group">
-      <label>Min Edge Score &mdash; <span id="minEdgeLabel">2.5pp</span></label>
-      <div class="slider-row">
-        <input type="range" id="minEdgeSlider" min="0" max="15" value="2.5" step="0.5" />
-        <span class="slider-val" id="minEdgeVal">2.5pp</span>
-      </div>
-    </div>
-
-    <div class="setting-group">
-      <label>Sport Filter</label>
-      <div class="checkbox-grid">
-        <input class="sport-cb" type="checkbox" id="cbAll" value="All" checked />
-        <label class="sport-label" for="cbAll">ALL</label>
-        <input class="sport-cb" type="checkbox" id="cbNba" value="NBA" />
-        <label class="sport-label" for="cbNba">NBA</label>
-        <input class="sport-cb" type="checkbox" id="cbNfl" value="NFL" />
-        <label class="sport-label" for="cbNfl">NFL</label>
-        <input class="sport-cb" type="checkbox" id="cbMlb" value="MLB" />
-        <label class="sport-label" for="cbMlb">MLB</label>
-        <input class="sport-cb" type="checkbox" id="cbNhl" value="NHL" />
-        <label class="sport-label" for="cbNhl">NHL</label>
-        <input class="sport-cb" type="checkbox" id="cbNcaab" value="NCAAB" />
-        <label class="sport-label" for="cbNcaab">NCAAB</label>
-        <input class="sport-cb" type="checkbox" id="cbPga" value="PGA" />
-        <label class="sport-label" for="cbPga">PGA</label>
-        <input class="sport-cb" type="checkbox" id="cbUfc" value="UFC" />
-        <label class="sport-label" for="cbUfc">UFC</label>
-        <input class="sport-cb" type="checkbox" id="cbTennis" value="TENNIS" />
-        <label class="sport-label" for="cbTennis">Tennis</label>
-        <input class="sport-cb" type="checkbox" id="cbSoccer" value="SOCCER" />
-        <label class="sport-label" for="cbSoccer">Soccer</label>
-      </div>
-    </div>
-
-    <div class="setting-group">
-      <label>Auto-Refresh</label>
-      <div class="refresh-row">
-        <label class="toggle-switch">
-          <input type="checkbox" id="autoRefreshToggle" />
-          <span class="toggle-track"></span>
-        </label>
-        <span class="refresh-label">Every</span>
-        <select class="refresh-select" id="refreshInterval">
-          <option value="15">15s</option>
-          <option value="30" selected>30s</option>
-          <option value="60">60s</option>
-        </select>
-      </div>
-    </div>
-
   </div>
 
-  <!-- ─── Scan Controls ────────────────────────────────────── -->
-  <div class="scan-bar">
-    <button class="btn-scan" id="scanBtn" onclick="triggerScan()">
-      &#9889; SCAN NOW
-    </button>
-    <span class="scan-status" id="scanStatus">Press scan to fetch live markets</span>
-  </div>
-
-  <!-- ─── Loading State ─────────────────────────────────────── -->
+  <!-- Loading -->
   <div id="loadingState" class="spinner-wrap" style="display:none;">
     <div class="spinner"></div>
-    <div class="spinner-label">Scanning Kalshi markets&hellip;</div>
+    <div class="spinner-label">Scanning markets&hellip;</div>
   </div>
 
-  <!-- ─── Error State ───────────────────────────────────────── -->
+  <!-- Error -->
   <div id="errorState" class="error-box" style="display:none;">
-    <div class="error-title">SCAN FAILED</div>
-    <div class="error-msg" id="errorMsg"></div>
+    <p id="errorMsg"></p>
     <button class="btn-retry" onclick="triggerScan()">&#8634; RETRY</button>
   </div>
 
-  <!-- ─── Main Content ──────────────────────────────────────── -->
+  <!-- Main content -->
   <div id="mainContent" style="display:none;">
 
-    <div class="section-header">
-      <span class="section-title">FLAGGED EDGES</span>
-      <span class="section-count" id="flaggedSection">0 markets</span>
+    <div class="section-head">
+      EDGES FOUND <span class="section-count" id="edgeCount"></span>
     </div>
-    <div id="flaggedGrid" class="markets-grid"></div>
 
-    <div class="all-markets-section">
-      <div class="section-header">
-        <span class="section-title">ALL MARKETS</span>
-        <span class="section-count" id="allSection">0 markets</span>
-        <button class="section-toggle" id="allToggleBtn" onclick="toggleAllMarkets()">&#9660; SHOW</button>
-      </div>
-      <div id="allMarketsBody" class="all-markets-body">
-        <div id="allGrid" class="markets-grid"></div>
-      </div>
+    <div id="noVegasNote" class="no-vegas-note" style="display:none;">
+      &#9888; Some markets below don't have Vegas lines — those use a statistical baseline and are less reliable.
     </div>
+
+    <div id="edgeList" class="edge-list"></div>
 
   </div>
 
-</div><!-- /.app -->
+</div>
 
 <script>
-// ─── State ──────────────────────────────────────────────────────────
-var rawMarkets   = [];
-var analyzed     = [];
+var rawMarkets = [];
 var refreshTimer = null;
 
-// ─── LocalStorage ────────────────────────────────────────────────────
-function loadSettings() {
-  var br = localStorage.getItem('es_bankroll');
-  var kf = localStorage.getItem('es_kelly');
-  if (br) document.getElementById('bankroll').value = br;
-  if (kf) {
-    document.getElementById('kellySlider').value = parseFloat(kf) * 100;
-    updateKellyLabel();
-  }
-}
-function saveSettings() {
-  localStorage.setItem('es_bankroll', document.getElementById('bankroll').value);
-  localStorage.setItem('es_kelly', document.getElementById('kellySlider').value / 100);
+function getBankroll() { return parseFloat(document.getElementById('bankroll').value) || 500; }
+function getMinGap()   { return parseInt(document.getElementById('minGap').value) || 5; }
+
+function setStatus(live, label) {
+  document.getElementById('statusDot').className = 'status-dot' + (live ? ' live' : '');
+  document.getElementById('statusLabel').textContent = label;
 }
 
-// ─── Getters ─────────────────────────────────────────────────────────
-function getBankroll()    { return parseFloat(document.getElementById('bankroll').value) || 500; }
-function getKelly()       { return parseInt(document.getElementById('kellySlider').value) / 100; }
-function getMinEdge()     { return parseFloat(document.getElementById('minEdgeSlider').value); }
-function getAutoRefresh() { return document.getElementById('autoRefreshToggle').checked; }
-function getInterval()    { return parseInt(document.getElementById('refreshInterval').value) * 1000; }
-
-function getActiveSports() {
-  if (document.getElementById('cbAll').checked) return null;
-  var sports = [];
-  var ids = ['cbNba','cbNfl','cbMlb','cbNhl','cbNcaab','cbPga','cbUfc','cbTennis','cbSoccer'];
-  var vals = ['NBA','NFL','MLB','NHL','NCAAB','PGA','UFC','TENNIS','SOCCER'];
-  ids.forEach(function(id, i) {
-    var el = document.getElementById(id);
-    if (el && el.checked) sports.push(vals[i]);
-  });
-  return sports.length ? sports : null;
+function kellyBet(edgeCents, askCents, bankroll) {
+  // Simple Kelly: edge / odds * bankroll, capped at 5%
+  var prob    = askCents / 100;
+  var edge    = edgeCents / 100;
+  var odds    = (100 / askCents) - 1;
+  var kelly   = ((prob + edge) * odds - (1 - prob - edge)) / odds;
+  var bet     = Math.max(0, kelly * 0.25 * bankroll); // quarter Kelly
+  return Math.min(bet, bankroll * 0.05);              // cap at 5%
 }
 
-// ─── Labels ──────────────────────────────────────────────────────────
-function updateKellyLabel() {
-  var v = document.getElementById('kellySlider').value;
-  document.getElementById('kellyLabel').textContent = v + '%';
-  document.getElementById('kellyVal').textContent   = v + '%';
-}
-function updateMinEdgeLabel() {
-  var v = document.getElementById('minEdgeSlider').value;
-  document.getElementById('minEdgeLabel').textContent = v + 'pp';
-  document.getElementById('minEdgeVal').textContent   = v + 'pp';
-}
-
-// ─── Toggles ─────────────────────────────────────────────────────────
-function toggleSettings() {
-  var bar   = document.getElementById('settingsBar');
-  var arrow = document.getElementById('settingsArrow');
-  bar.classList.toggle('open');
-  arrow.innerHTML = bar.classList.contains('open') ? '&#9650;' : '&#9660;';
-}
-function toggleAllMarkets() {
-  var body = document.getElementById('allMarketsBody');
-  var btn  = document.getElementById('allToggleBtn');
-  body.classList.toggle('open');
-  btn.innerHTML = body.classList.contains('open') ? '&#9650; HIDE' : '&#9660; SHOW';
-}
-
-// ─── Live Dot ─────────────────────────────────────────────────────────
-function setLive(active, label) {
-  document.getElementById('liveDot').classList.toggle('active', active);
-  document.getElementById('liveLabel').textContent = label;
-}
-
-// ─── Scan ─────────────────────────────────────────────────────────────
 function triggerScan() {
   var btn = document.getElementById('scanBtn');
   btn.disabled = true;
-  document.getElementById('scanStatus').textContent   = 'Scanning\u2026';
   document.getElementById('loadingState').style.display = 'flex';
   document.getElementById('errorState').style.display   = 'none';
   document.getElementById('mainContent').style.display  = 'none';
-  setLive(true, 'SCANNING');
+  setStatus(true, 'SCANNING');
 
   fetch('/api/markets')
-    .then(function(res) {
-      if (!res.ok) {
-        return res.json().catch(function() { return { error: res.statusText }; }).then(function(body) {
-          throw new Error(body.error || 'HTTP ' + res.status);
-        });
-      }
-      return res.json();
+    .then(function(r) {
+      if (!r.ok) return r.json().then(function(b) { throw new Error(b.error || 'HTTP ' + r.status); });
+      return r.json();
     })
     .then(function(data) {
       rawMarkets = data.markets || [];
-      var now = new Date();
-      document.getElementById('lastScanTime').textContent =
-        now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      document.getElementById('totalMarkets').textContent = rawMarkets.length;
-      document.getElementById('scanStatus').textContent =
-        rawMarkets.length + ' sports markets fetched \u2014 ' + now.toLocaleTimeString();
-      runModelAndRender();
-      setLive(true, 'LIVE');
+      document.getElementById('lastScan').textContent =
+        'Last scan: ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+      renderEdges();
+      setStatus(true, 'LIVE');
     })
     .catch(function(err) {
       document.getElementById('loadingState').style.display = 'none';
       document.getElementById('errorState').style.display   = 'block';
       document.getElementById('errorMsg').textContent       = err.message;
-      setLive(false, 'ERROR');
-      document.getElementById('scanStatus').textContent = 'Scan failed. See error above.';
+      setStatus(false, 'ERROR');
     })
-    .finally(function() {
-      btn.disabled = false;
-    });
+    .finally(function() { btn.disabled = false; });
 }
 
-// ─── Model + Render ──────────────────────────────────────────────────
-function runModelAndRender() {
-  var bankroll    = getBankroll();
-  var kelly       = getKelly();
-  var minEdge     = getMinEdge();
-  var sportFilter = getActiveSports();
+function renderEdges() {
+  var bankroll = getBankroll();
+  var minGap   = getMinGap();
 
-  analyzed = rawMarkets.map(function(m) {
-    return EdgeModel.analyzeMarket(m, bankroll, kelly);
+  // For each market: calculate gap between Vegas implied prob and Kalshi ask
+  var edges = [];
+
+  rawMarkets.forEach(function(m) {
+    if (!m.has_vegas || m.vegas_prob === null) return; // Vegas only for now
+    if (!m.yes_bid) return;
+
+    var kalshiAsk  = m.yes_bid;              // yes_bid is actually ask price
+    var vegasCents = Math.round(m.vegas_prob * 100);
+    var gapCents   = vegasCents - kalshiAsk; // positive = Kalshi underpricing YES
+    var abgGap     = Math.abs(gapCents);
+
+    if (abgGap < minGap) return; // below threshold
+
+    var betYes = gapCents > 0;   // YES is cheap on Kalshi vs Vegas
+    var bet    = kellyBet(abgGap, betYes ? kalshiAsk : (100 - kalshiAsk), bankroll);
+
+    edges.push({
+      market:    m,
+      kalshi:    kalshiAsk,
+      vegas:     vegasCents,
+      gap:       gapCents,
+      absGap:    abgGap,
+      betYes:    betYes,
+      bet:       bet,
+    });
   });
 
-  var visible = sportFilter
-    ? analyzed.filter(function(m) { return sportFilter.indexOf(m.sport) !== -1; })
-    : analyzed;
+  // Sort by gap size descending
+  edges.sort(function(a, b) { return b.absGap - a.absGap; });
 
-  var sorted = visible.slice().sort(function(a, b) { return b.edgeScore - a.edgeScore; });
+  var list = document.getElementById('edgeList');
+  list.innerHTML = '';
 
-  var flagged = sorted.filter(function(m) { return m.flagged && m.edgeScore >= minEdge; });
-  document.getElementById('flaggedCount').textContent   = flagged.length;
-  document.getElementById('flaggedSection').textContent = flagged.length + ' markets';
-  renderGrid('flaggedGrid', flagged, true);
-
-  document.getElementById('allSection').textContent = sorted.length + ' markets';
-  renderGrid('allGrid', sorted, false);
-
+  document.getElementById('edgeCount').textContent = edges.length + ' market' + (edges.length !== 1 ? 's' : '');
+  document.getElementById('mainContent').style.display = 'block';
   document.getElementById('loadingState').style.display = 'none';
-  document.getElementById('mainContent').style.display  = 'block';
-  saveSettings();
-}
+  document.getElementById('noVegasNote').style.display = 'none';
 
-// ─── Render Grid ─────────────────────────────────────────────────────
-function renderGrid(containerId, markets, showEmpty) {
-  var container = document.getElementById(containerId);
-  container.innerHTML = '';
-
-  if (!markets.length && showEmpty) {
-    container.innerHTML =
-      '<div class="empty-state" style="grid-column:1/-1;">' +
+  if (!edges.length) {
+    list.innerHTML =
+      '<div class="empty-state">' +
         '<div class="empty-icon">&#128225;</div>' +
-        '<div class="empty-title">No Edges Detected</div>' +
-        '<div class="empty-sub">No edges detected in current markets. Refresh to scan again.</div>' +
+        '<div class="empty-title">No Edges Found</div>' +
+        '<div class="empty-sub">No markets exceed the ' + minGap + '&cent; minimum gap right now. Try lowering the threshold or scan again later.</div>' +
       '</div>';
     return;
   }
 
-  markets.forEach(function(m) {
-    container.appendChild(buildCard(m));
+  edges.forEach(function(e) {
+    var m      = e.market;
+    var isStrong = e.absGap >= 8;
+
+    // Extract clean game name from title
+    var title = m.title || m.ticker || '';
+    // Remove the "— YES = XXX wins" suffix for the main title
+    var gameTitle = title.replace(/\s*—\s*YES\s*=\s*\S+\s*wins\s*$/i, '').trim();
+    // What we're betting on
+    var betOn = e.betYes
+      ? title.match(/YES\s*=\s*(\S+)\s*wins/i)?.[1] || 'YES'
+      : 'NO (other team)';
+
+    var closeDiff = m.close_time
+      ? Math.round((new Date(m.close_time) - new Date()) / (1000 * 60 * 60 * 24))
+      : null;
+    var closeStr = closeDiff !== null
+      ? 'Closes in ' + closeDiff + 'd'
+      : '';
+
+    var vol = (m.volume || 0) + (m.open_interest || 0);
+    var volStr = vol > 0 ? fmtNum(vol) + ' contracts' : 'No trading yet';
+
+    var card = document.createElement('div');
+    card.className = 'edge-card ' + (isStrong ? 'strong' : 'mild');
+
+    card.innerHTML =
+      '<div class="card-inner">' +
+
+        // Signal
+        '<div class="signal ' + (e.betYes ? 'yes' : 'no') + '">' +
+          '<div class="signal-action">BET ' + (e.betYes ? 'YES' : 'NO') + '</div>' +
+          '<div class="signal-label">' + betOn + '</div>' +
+        '</div>' +
+
+        // Info
+        '<div class="card-info">' +
+          '<div class="card-title">' + escHtml(gameTitle) + '</div>' +
+          '<div class="card-subtitle">' +
+            'Kalshi is <span class="highlight">' + e.absGap + '&cent; ' +
+            (e.betYes ? 'cheaper' : 'more expensive') +
+            '</span> than Vegas on ' + escHtml(betOn) +
+          '</div>' +
+        '</div>' +
+
+        // Price comparison
+        '<div class="price-compare">' +
+          '<div class="price-row">' +
+            '<div class="price-label">Kalshi</div>' +
+            '<div class="price-val kalshi">' + e.kalshi + '&cent;</div>' +
+          '</div>' +
+          '<div class="price-row">' +
+            '<div class="price-label">Vegas</div>' +
+            '<div class="price-val vegas">~' + e.vegas + '&cent;</div>' +
+          '</div>' +
+          '<div class="gap-badge">+' + e.absGap + '&cent; edge</div>' +
+        '</div>' +
+
+        // Bet size
+        (e.bet > 0 ?
+          '<div class="bet-suggest">' +
+            '<div class="bet-amount">$' + e.bet.toFixed(2) + '</div>' +
+            '<div class="bet-label">Suggested bet</div>' +
+          '</div>'
+        : '') +
+
+      '</div>' +
+
+      // Footer
+      '<div class="card-footer">' +
+        '<div class="footer-item">&#127944; NFL &nbsp;|&nbsp; Game winner</div>' +
+        '<div class="footer-item"><span>' + volStr + '</span></div>' +
+        (closeStr ? '<div class="footer-item"><span>' + closeStr + '</span></div>' : '') +
+        '<div class="footer-item" style="font-size:0.55rem;color:var(--faint);">' + escHtml(m.ticker || '') + '</div>' +
+      '</div>';
+
+    list.appendChild(card);
   });
 }
 
-// ─── Build Card ──────────────────────────────────────────────────────
-function buildCard(m) {
-  var card = document.createElement('div');
-  card.className = 'market-card tier-' + m.tier;
-
-  var yb           = (m.yes_bid       != null) ? m.yes_bid                              : '\u2014';
-  var nb           = (m.no_bid        != null) ? m.no_bid                               : '\u2014';
-  var fairPct      = (m.fairValue     != null) ? (m.fairValue * 100).toFixed(1) + '%'   : '\u2014';
-  var vigTxt       = (m.vigPct        != null) ? m.vigPct.toFixed(1) + '%'              : '\u2014';
-  var edgeTxt      = (m.edgeScore     != null) ? m.edgeScore.toFixed(1)                 : '0.0';
-  var rawEdgeTxt   = (m.rawEdgeScore  != null) ? m.rawEdgeScore.toFixed(1)              : '0.0';
-  var confPct      = (m.confidence    != null) ? Math.round(m.confidence * 100) + '%'   : '\u2014';
-  var baselineTxt  = (m.baseline      != null) ? (m.baseline * 100).toFixed(0) + '%'    : '\u2014';
-  var betTxt       = (m.recommendedBet > 0)    ? '$' + m.recommendedBet.toFixed(2)      : '$0.00';
-  var volTxt       = (m.volume        != null) ? fmtNum(m.volume)                       : '\u2014';
-  var oiTxt        = (m.open_interest != null) ? fmtNum(m.open_interest)                : '\u2014';
-  var closeStr     = formatCloseTime(m.close_time);
-  var bsy          = m.bestSide === 'YES';
-  var marketType   = (m.marketType || 'UNKNOWN').replace('_', ' ');
-
-  var sideHtml = '';
-  if (m.bestSide) {
-    sideHtml = '<div class="best-side-badge side-' + m.bestSide + '">BET ' + m.bestSide + '</div>';
-  }
-
-  // Kelly cap warning
-  var kellyHtml = '<div class="kelly-row" style="margin-top:6px;">Kelly bet: <span class="kelly-amount">' + betTxt + '</span>';
-  if (m.wasCapped) {
-    kellyHtml += ' <span style="color:var(--yellow);font-size:0.6rem;">(capped at ' + Math.round(EdgeModel.MAX_KELLY_PCT * 100) + '%)</span>';
-  }
-  kellyHtml += '</div>';
-
-  // Low confidence warning
-  var confWarning = '';
-  if (m.confidence != null && m.confidence < 0.6) {
-    confWarning = '<div style="font-family:var(--mono);font-size:0.6rem;color:var(--yellow);margin-top:4px;">&#9888; Low volume \u2014 discounted score</div>';
-  }
-
-  card.innerHTML =
-    '<div class="card-head">' +
-      '<div class="card-title">' + escHtml(m.title || m.ticker || 'Unnamed Market') + '</div>' +
-      '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">' +
-        '<span class="sport-tag">' + escHtml(m.sport || '?') + '</span>' +
-        '<span class="sport-tag" style="color:var(--text-faint);">' + escHtml(marketType) + '</span>' +
-      '</div>' +
-    '</div>' +
-
-    '<div class="prices-row">' +
-      '<div class="price-cell">' +
-        '<div class="price-cell-label">YES ASK</div>' +
-        '<div class="price-cell-val' + (bsy ? ' best-yes' : '') + '">' + yb + '&cent;</div>' +
-      '</div>' +
-      '<div class="price-cell">' +
-        '<div class="price-cell-label">NO ASK</div>' +
-        '<div class="price-cell-val' + (!bsy && m.bestSide ? ' best-no' : '') + '">' + nb + '&cent;</div>' +
-      '</div>' +
-    '</div>' +
-
-    '<div class="stats-mini">' +
-      '<div class="stat-mini"><div class="stat-mini-label">Vig</div><div class="stat-mini-val">' + vigTxt + '</div></div>' +
-      '<div class="stat-mini"><div class="stat-mini-label">Fair Val</div><div class="stat-mini-val">' + fairPct + '</div></div>' +
-      '<div class="stat-mini"><div class="stat-mini-label">' + (m.has_vegas ? 'Vegas Line' : 'Baseline') + '</div><div class="stat-mini-val" style="' + (m.has_vegas ? 'color:var(--accent)' : '') + '">' + baselineTxt + '</div></div>' +
-      '<div class="stat-mini"><div class="stat-mini-label">Raw Edge</div><div class="stat-mini-val">' + rawEdgeTxt + 'pp</div></div>' +
-      '<div class="stat-mini"><div class="stat-mini-label">Confidence</div><div class="stat-mini-val">' + confPct + '</div></div>' +
-      '<div class="stat-mini"><div class="stat-mini-label">Vol+OI</div><div class="stat-mini-val">' + volTxt + '+' + oiTxt + '</div></div>' +
-    '</div>' +
-
-    '<div class="edge-block">' +
-      '<div>' +
-        '<div class="edge-score-big tier-' + m.tier + '">' + edgeTxt + '</div>' +
-        '<div class="edge-score-unit">pp edge (adj)</div>' +
-      '</div>' +
-      '<div class="edge-info">' +
-        '<div class="edge-tier tier-' + m.tier + '">' + m.tier + ' EDGE</div>' +
-        sideHtml +
-        kellyHtml +
-        confWarning +
-      '</div>' +
-    '</div>' +
-
-    '<div class="card-foot">' +
-      '<div class="card-foot-item">Ticker <span style="font-size:0.55rem;">' + escHtml(m.ticker || '\u2014') + '</span></div>' +
-      '<div class="' + closeStr.cls + '">' + closeStr.txt + '</div>' +
-    '</div>';
-
-  return card;
-}
-
-// ─── Utilities ────────────────────────────────────────────────────────
 function escHtml(s) {
   return String(s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;')
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
 function fmtNum(n) {
-  if (n == null) return '\u2014';
-  if (n >= 1e6)  return (n / 1e6).toFixed(1) + 'M';
-  if (n >= 1e3)  return (n / 1e3).toFixed(1) + 'K';
+  if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1) + 'K';
   return n.toLocaleString();
 }
-function formatCloseTime(closeTime) {
-  if (!closeTime) return { txt: 'No expiry', cls: 'close-time' };
-  var close = new Date(closeTime);
-  var now   = new Date();
-  var diff  = close - now;
-  if (diff < 0) return { txt: 'Expired', cls: 'close-time past' };
-  var h = Math.floor(diff / 3600000);
-  var m = Math.floor((diff % 3600000) / 60000);
-  if (h < 1)  return { txt: 'Closes in ' + m + 'm', cls: 'close-time urgent' };
-  if (h < 24) return { txt: 'Closes in ' + h + 'h ' + m + 'm', cls: h < 4 ? 'close-time urgent' : 'close-time' };
-  var d = Math.floor(h / 24);
-  return { txt: 'Closes in ' + d + 'd ' + (h % 24) + 'h', cls: 'close-time' };
-}
 
-// ─── Auto-Refresh ─────────────────────────────────────────────────────
-function setupAutoRefresh() {
-  clearInterval(refreshTimer);
-  if (getAutoRefresh()) {
-    refreshTimer = setInterval(triggerScan, getInterval());
-    document.getElementById('scanStatus').textContent =
-      'Auto-refreshing every ' + document.getElementById('refreshInterval').value + 's';
-  }
-}
-
-// ─── Event Listeners ──────────────────────────────────────────────────
-document.getElementById('kellySlider').addEventListener('input', function() {
-  updateKellyLabel();
-  if (rawMarkets.length) runModelAndRender();
-});
-document.getElementById('minEdgeSlider').addEventListener('input', function() {
-  updateMinEdgeLabel();
-  if (rawMarkets.length) runModelAndRender();
-});
+// Re-render when settings change (no new fetch needed)
 document.getElementById('bankroll').addEventListener('input', function() {
-  if (rawMarkets.length) runModelAndRender();
+  if (rawMarkets.length) renderEdges();
 });
-document.getElementById('autoRefreshToggle').addEventListener('change', setupAutoRefresh);
-document.getElementById('refreshInterval').addEventListener('change', setupAutoRefresh);
-
-document.getElementById('cbAll').addEventListener('change', function() {
-  if (this.checked) {
-    ['cbNba','cbNfl','cbMlb','cbNhl','cbNcaab','cbPga','cbUfc','cbTennis','cbSoccer'].forEach(function(id) {
-      var el = document.getElementById(id);
-      if (el) el.checked = false;
-    });
-  }
-  if (rawMarkets.length) runModelAndRender();
-});
-['cbNba','cbNfl','cbMlb','cbNhl','cbNcaab','cbPga','cbUfc','cbTennis','cbSoccer'].forEach(function(id) {
-  var el = document.getElementById(id);
-  if (!el) return;
-  el.addEventListener('change', function() {
-    if (this.checked) document.getElementById('cbAll').checked = false;
-    if (rawMarkets.length) runModelAndRender();
-  });
+document.getElementById('minGap').addEventListener('change', function() {
+  if (rawMarkets.length) renderEdges();
 });
 
-// ─── Init ─────────────────────────────────────────────────────────────
-loadSettings();
-updateKellyLabel();
-updateMinEdgeLabel();
+// Load saved bankroll
+var saved = localStorage.getItem('es_bankroll');
+if (saved) document.getElementById('bankroll').value = saved;
+document.getElementById('bankroll').addEventListener('change', function() {
+  localStorage.setItem('es_bankroll', this.value);
+});
+
+// Auto-scan on load
 triggerScan();
 </script>
 </body>
