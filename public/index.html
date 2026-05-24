@@ -582,31 +582,38 @@ function renderEdges() {
   var bankroll = getBankroll();
   var minGap   = getMinGap();
 
-  // For each market: calculate gap between Vegas implied prob and Kalshi ask
+  // For each market: only flag YES edges (markets where Kalshi ask < Vegas implied).
+  // If Kalshi is overpricing YES, we skip that market entirely —
+  // the edge will show up as a YES edge on the opposing team's market instead.
+  // This way every flag is always "BET YES" on an underpriced team.
   var edges = [];
+  var seen  = {};  // deduplicate by event_ticker
 
   rawMarkets.forEach(function(m) {
-    if (!m.has_vegas || m.vegas_prob === null) return; // Vegas only for now
+    if (!m.has_vegas || m.vegas_prob === null) return;
     if (!m.yes_bid) return;
 
-    var kalshiAsk  = m.yes_bid;              // yes_bid is actually ask price
+    var kalshiAsk  = m.yes_bid;
     var vegasCents = Math.round(m.vegas_prob * 100);
-    var gapCents   = vegasCents - kalshiAsk; // positive = Kalshi underpricing YES
-    var abgGap     = Math.abs(gapCents);
+    var gapCents   = vegasCents - kalshiAsk; // positive = YES underpriced on Kalshi
 
-    if (abgGap < minGap) return; // below threshold
+    // Only show markets where YES is underpriced (BET YES)
+    if (gapCents < minGap) return;
 
-    var betYes = gapCents > 0;   // YES is cheap on Kalshi vs Vegas
-    var bet    = kellyBet(abgGap, betYes ? kalshiAsk : (100 - kalshiAsk), bankroll);
+    // Deduplicate — one edge per game
+    var key = (m.event_ticker || m.ticker);
+    if (seen[key]) return;
+    seen[key] = true;
+
+    var bet = kellyBet(gapCents, kalshiAsk, bankroll);
 
     edges.push({
-      market:    m,
-      kalshi:    kalshiAsk,
-      vegas:     vegasCents,
-      gap:       gapCents,
-      absGap:    abgGap,
-      betYes:    betYes,
-      bet:       bet,
+      market:  m,
+      kalshi:  kalshiAsk,
+      vegas:   vegasCents,
+      gap:     gapCents,
+      absGap:  gapCents,
+      bet:     bet,
     });
   });
 
@@ -635,14 +642,11 @@ function renderEdges() {
     var m      = e.market;
     var isStrong = e.absGap >= 8;
 
-    // Extract clean game name from title
-    var title = m.title || m.ticker || '';
-    // Remove the "— YES = XXX wins" suffix for the main title
+    // Extract clean game name and team from title
+    var title     = m.title || m.ticker || '';
     var gameTitle = title.replace(/\s*—\s*YES\s*=\s*\S+\s*wins\s*$/i, '').trim();
-    // What we're betting on
-    var betOn = e.betYes
-      ? title.match(/YES\s*=\s*(\S+)\s*wins/i)?.[1] || 'YES'
-      : 'NO (other team)';
+    var teamMatch = title.match(/YES\s*=\s*(\S+)\s*wins/i);
+    var betOn     = teamMatch ? teamMatch[1] : 'YES';
 
     var closeDiff = m.close_time
       ? Math.round((new Date(m.close_time) - new Date()) / (1000 * 60 * 60 * 24))
@@ -660,19 +664,17 @@ function renderEdges() {
     card.innerHTML =
       '<div class="card-inner">' +
 
-        // Signal
-        '<div class="signal ' + (e.betYes ? 'yes' : 'no') + '">' +
-          '<div class="signal-action">BET ' + (e.betYes ? 'YES' : 'NO') + '</div>' +
-          '<div class="signal-label">' + betOn + '</div>' +
+        // Signal — always BET YES on the underpriced team
+        '<div class="signal yes">' +
+          '<div class="signal-action">BET YES</div>' +
+          '<div class="signal-label">' + escHtml(betOn) + '</div>' +
         '</div>' +
 
         // Info
         '<div class="card-info">' +
           '<div class="card-title">' + escHtml(gameTitle) + '</div>' +
           '<div class="card-subtitle">' +
-            'Kalshi is <span class="highlight">' + e.absGap + '&cent; ' +
-            (e.betYes ? 'cheaper' : 'more expensive') +
-            '</span> than Vegas on ' + escHtml(betOn) +
+            escHtml(betOn) + ' YES is <span class="highlight">' + e.absGap + '&cent; cheaper</span> on Kalshi than Vegas implies' +
           '</div>' +
         '</div>' +
 
