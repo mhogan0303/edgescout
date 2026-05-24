@@ -230,13 +230,20 @@ function isTwoSided(market) {
 }
 
 // ─── Actionable timing filter ─────────────────────────────────────────
+// NFL: keep full window open (season lines posted months in advance)
+// NBA Series: keep open (runs length of playoff series)
+// MLB/NBA/NHL/UFC: games within next 72 hours (today + 2 days of slate)
 function isActionable(market) {
   const ticker    = (market.ticker ?? '').toUpperCase();
   const closeTime = market.close_time;
   if (!closeTime) return true;
+
+  // Always show NFL and NBA series regardless of timing
   if (ticker.includes('KXNFL') || ticker.includes('KXNBASERIES')) return true;
+
+  // For everything else, show games within 72 hours
   const hoursUntilClose = (new Date(closeTime) - new Date()) / (1000 * 60 * 60);
-  return hoursUntilClose <= 48;
+  return hoursUntilClose > 0 && hoursUntilClose <= 72;
 }
 
 // ─── Title enrichment ─────────────────────────────────────────────────
