@@ -703,7 +703,7 @@ function renderEdges() {
 
       // Footer
       '<div class="card-footer">' +
-        '<div class="footer-item">&#127944; NFL &nbsp;|&nbsp; Game winner</div>' +
+        '<div class="footer-item">&#127944; ' + detectSportLabel(m.ticker) + ' &nbsp;|&nbsp; Game winner</div>' +
         '<div class="footer-item"><span>' + volStr + '</span></div>' +
         (closeStr ? '<div class="footer-item"><span>' + closeStr + '</span></div>' : '') +
         '<div class="footer-item" style="font-size:0.55rem;color:var(--faint);">' + escHtml(m.ticker || '') + '</div>' +
@@ -711,6 +711,18 @@ function renderEdges() {
 
     list.appendChild(card);
   });
+}
+
+function detectSportLabel(ticker) {
+  if (!ticker) return 'Sport';
+  var t = ticker.toUpperCase();
+  if (t.includes('KXNFL'))    return 'NFL';
+  if (t.includes('KXMLB'))    return 'MLB';
+  if (t.includes('KXNBA'))    return 'NBA';
+  if (t.includes('KXNHL'))    return 'NHL';
+  if (t.includes('KXUFC'))    return 'UFC';
+  if (t.includes('KXPGA'))    return 'PGA';
+  return 'Sport';
 }
 
 function escHtml(s) {
